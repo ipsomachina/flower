@@ -1,0 +1,162 @@
+<h1>Operating a cluster</h1>
+<p class="lede">One binary serves every member: <code>cargo flower serve</code>. This guide covers running three of them, the credentials they need, changing membership, watching health and load, upgrading Flower, and the knobs worth knowing.</p>
+
+<h2 id="a-three-node-cluster">A three-node cluster</h2>
+
+<p>Three voters tolerate the loss of one. Give each member its own directory, ID, HTTP address and Raft address, and the same tokens. Only the founding member gets <code>--bootstrap</code>, naming every member's <em>Raft</em> address:</p>
+
+<pre><code class="language-bash">export FLOWER_ADMIN_TOKEN=… FLOWER_WORKER_TOKEN=… FLOWER_PEER_TOKEN=…
+
+# on host a
+cargo flower serve --dir /var/lib/flower --id 1 --http 0.0.0.0:8080 --raft 10.0.0.1:9000 \
+  --advertise-http https://a.flower.internal:8080 \
+  --bootstrap 1=10.0.0.1:9000 --bootstrap 2=10.0.0.2:9000 --bootstrap 3=10.0.0.3:9000
+# on host b
+cargo flower serve --dir /var/lib/flower --id 2 --http 0.0.0.0:8080 --raft 10.0.0.2:9000 \
+  --advertise-http https://b.flower.internal:8080
+# on host c
+cargo flower serve --dir /var/lib/flower --id 3 --http 0.0.0.0:8080 --raft 10.0.0.3:9000 \
+  --advertise-http https://c.flower.internal:8080</code></pre>
+
+<p>On one machine, with loopback addresses and ports 18091–18093, the same three commands give:</p>
+
+<pre><code class="language-console">id=1 state=Leader leader=Some(1) term=2 last_log=Some(1) last_applied=Some(1)
+id=2 state=Follower leader=Some(1) term=2 last_log=Some(1) last_applied=Some(1)
+id=3 state=Follower leader=Some(1) term=2 last_log=Some(1) last_applied=Some(1)</code></pre>
+
+<p>A write sent to a follower is forwarded to the leader; its <code>Server-Timing</code> shows the hop and which member led:</p>
+
+<pre><code class="language-http">server-timing: forward;dur=4.1, admission;dur=0.0, queue;dur=0.0, eval;dur=0.6, commit;dur=3.2, append;dur=0.1, replicate;dur=2.5, apply;dur=0.3, total;dur=4.2, node;desc=3, leader;desc=1
+x-flower-leader-url: http://127.0.0.1:18091</code></pre>
+
+<ul>
+  <li><code>--bootstrap</code> takes effect only on an empty directory. Restarting any member with the same command line is always safe.</li>
+  <li><code>--advertise-http</code> is the URL clients should use to reach this member; it appears in <code>x-flower-leader-url</code>. It defaults to the listen address, except when listening on all interfaces.</li>
+  <li>Use the same <a href="#timing">timing settings</a> on every member.</li>
+  <li>On shutdown (Ctrl-C or SIGTERM), a member hands leadership of every group it leads to the most caught-up voter, then drains HTTP requests for <code>--shutdown-timeout-ms</code> (30 s).</li>
+</ul>
+
+<h2 id="credentials-and-tls">Credentials and TLS</h2>
+
+<table>
+  <thead><tr><th>Flag</th><th>Environment</th><th>Grants</th></tr></thead>
+  <tbody>
+    <tr><td><code>--admin-token</code></td><td><code>FLOWER_ADMIN_TOKEN</code></td><td>Operator endpoints (deploy, membership, keys, backups, metrics…), the worker and sync endpoints, and trusted-gateway calls. Without it, operator endpoints always answer 403.</td></tr>
+    <tr><td><code>--worker-token</code></td><td><code>FLOWER_WORKER_TOKEN</code></td><td>The queue endpoints, for workers.</td></tr>
+    <tr><td><code>--sync-token</code></td><td><code>FLOWER_SYNC_TOKEN</code></td><td>Replica sync, for devices.</td></tr>
+    <tr><td><code>--peer-token</code></td><td><code>FLOWER_PEER_TOKEN</code></td><td>Raft between members. Defaults to the admin token; required whenever <code>--raft</code> is not loopback.</td></tr>
+    <tr><td><code>--key-wrapping-file</code></td><td><code>FLOWER_KEY_WRAPPING_FILE</code></td><td>Not a token: the 32-byte key sealing every database's <a href="crypto.html#managed-keys">managed-key catalog</a>. Mount the same file on every member of every group. A member without it serves no catalog key (<code>KEYS_LOCKED</code>), and a partition move to a group it leads waits until it can. To replace it, start members with the new file and the old one as <code>--key-wrapping-previous</code>, then run <code>cargo flower keys --db … rewrap</code>.</td></tr>
+  </tbody>
+</table>
+
+<p>Client commands read the server's address from <code>--endpoint</code>, or <code>FLOWER_ENDPOINT</code>, defaulting to <code>http://127.0.0.1:8080</code>, and the admin token from <code>FLOWER_ADMIN_TOKEN</code>. Application calls need no server token; modules authenticate their own users (see <a href="auth.html">Authentication</a>). For TLS on the API, pass <code>--tls-cert</code> and <code>--tls-key</code> (PEM): every connection is then TLS 1.2 or 1.3, HTTP/2 by ALPN, with no plaintext fallback. For TLS between members, pass all three of <code>--raft-tls-cert</code>, <code>--raft-tls-key</code> and <code>--raft-tls-ca</code> on every member. The API serves HTTP/1.1 and HTTP/2 on one port; there are no CORS headers, so browsers must call through your own origin.</p>
+
+<h2 id="membership">Changing membership</h2>
+
+<p><code>cargo flower membership</code> without <code>--members</code> prints the member's view: leader, voter sets and addresses. With <code>--members</code>, it sends the leader the complete <strong>desired</strong> voter set:</p>
+
+<pre><code class="language-bash">export FLOWER_ENDPOINT=https://a.flower.internal:8080
+cargo flower membership \
+  --members 1=10.0.0.1:9000 --members 2=10.0.0.2:9000 --members 3=10.0.0.3:9000 --members 4=10.0.0.4:9000</code></pre>
+
+<p>The leader checks every member's identity and software compatibility, refuses a new member that already holds Raft state, waits for new members to catch up, and switches through joint consensus. A change is bounded to 15 seconds; a refused or uncertain one exits non-zero (409 <code>membership</code>) and may have partly happened, so inspect before retrying, and pass <code>--expected-log-id</code> to make a change conditional on the membership you inspected.</p>
+
+<ul>
+  <li><strong>Add</strong> a member by starting it with an empty directory and no <code>--bootstrap</code>, then including it in <code>--members</code>.</li>
+  <li><strong>Remove</strong> one by leaving it out (<code>--retain</code> keeps it as a non-voting learner).</li>
+  <li><strong>Replace</strong> a dead member under a fresh ID: an ID cannot move to another address.</li>
+  <li><strong>Move leadership</strong> before maintenance with <code>cargo flower leadership --to 2</code>, sent to the leader; writes answer a retryable <code>503 leadership_transfer</code> for the moment it takes.</li>
+</ul>
+
+<h2 id="health">Health, readiness and status</h2>
+
+<table>
+  <thead><tr><th>Endpoint</th><th>Use</th></tr></thead>
+  <tbody>
+    <tr><td><code>GET /health/live</code></td><td>Liveness: <code>200 {"ok":true}</code> while the process serves.</td></tr>
+    <tr><td><code>GET /health/ready</code></td><td>Readiness: <code>200</code> when the member knows a leader, has applied what it knows is committed, is not rejoining and has no storage failure; <code>503</code> with a <code>reason</code> otherwise. A process hosting several groups is ready only when all are.</td></tr>
+    <tr><td><code>GET /v1/status</code></td><td>Raft state: <code>{id, state, leader, term, last_log, last_applied}</code> (<code>cargo flower status</code>).</td></tr>
+  </tbody>
+</table>
+
+<pre><code class="language-json">{"applied":1,"committed":1,"leader":1,"ok":true,"reason":null,"rejoining":false,"storage":null}</code></pre>
+
+<p>Route load balancer traffic by readiness. A member that lost its data, or restarted after an unsynced crash, comes back <em>rejoining</em>: unready, casting no votes and refusing replica-local reads until it has caught up with its leader.</p>
+
+<h2 id="observability">Metrics, timing and tracing</h2>
+
+<ul>
+  <li><strong><code>Server-Timing</code></strong> on every query, mutation and transaction answer breaks the request into phases: <code>forward</code>, <code>cache</code>, <code>fence</code>, <code>join</code>, <code>admission</code>, <code>queue</code>, <code>eval</code>, <code>commit</code>, <code>append</code>, <code>replicate</code>, <code>apply</code>, <code>total</code>, plus the answering <code>node</code> and the <code>leader</code>. Always on, and visible in browser dev tools.</li>
+  <li><strong><code>GET /v1/metrics</code></strong> (admin; <code>cargo flower metrics</code>): per-database revisions, admission and shedding, reads (lease reads, quorum rounds, forwards), the writer, retention, deployments, snapshots, compaction, query cache, authorization decisions, Wasm pools and per-method costs.</li>
+  <li><strong>OpenTelemetry</strong>: set <code>FLOWER_OTEL_ENABLED=1</code> and the standard <code>OTEL_EXPORTER_OTLP_*</code> variables (HTTP protobuf or JSON; no gRPC). Spans join an incoming <code>traceparent</code> and follow forwards; metrics are named <code>flower.http.*</code>, <code>flower.query.*</code>, <code>flower.writer.*</code>, <code>flower.evaluator.*</code>, <code>flower.storage.*</code>, <code>flower.raft.*</code> and <code>flower.watch.*</code>. Request bodies, arguments and credentials are never exported. Logs follow <code>RUST_LOG</code> (default <code>info</code>).</li>
+</ul>
+
+<h2 id="dashboard">The admin dashboard</h2>
+
+<p>Every member serves a dashboard at <code>/admin</code> on its API port: Raft and readiness, replication, databases and modules, queues, deployments and stagings, backups, retention and live activity. It asks for the admin token, keeps it for the tab only, and talks only to its own origin. Actions that change things — taking a backup, transferring leadership, advancing or activating a staging — ask for confirmation. Turn it off with <code>--admin-ui false</code>. The same data streams as server-sent events from <code>GET /v1/admin/stream</code>.</p>
+
+<h2 id="overload">Overload</h2>
+
+<p>Flower refuses work it cannot do in time rather than queueing without bound. A refused request answers <code>503 overloaded</code> with <code>Retry-After</code>; nothing ran, so clients retry after the delay (the Rust client does). Requests carrying <code>x-flower-timeout-ms</code> are shed as soon as they could no longer finish within it (<code>503 caller_deadline_exceeded</code>), and a write still queued at its deadline never runs. Writes never queue behind reads, and each database gets a fair share of each queue.</p>
+
+<table>
+  <thead><tr><th>Flag</th><th>Default</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td><code>--query-workers</code></td><td>CPU count</td><td>Concurrent query and watch evaluations.</td></tr>
+    <tr><td><code>--queued-input-bytes</code></td><td>64 MiB</td><td>Request bytes queued or running.</td></tr>
+    <tr><td><code>--admission-max-wait-ms</code></td><td>10,000</td><td>Longest wait for admission before refusing.</td></tr>
+    <tr><td><code>--admission-target-ms</code> / <code>--admission-interval-ms</code></td><td>50 / 500</td><td>Queueing-delay target for early shedding of requests with deadlines.</td></tr>
+    <tr><td><code>--writer-preparation-workers</code></td><td>min(CPUs, 8)</td><td>Threads preparing mutations speculatively.</td></tr>
+    <tr><td><code>--guest-timeout-ms</code></td><td>5,000</td><td>The deadline of a call whose method declares no <code>timeout</code>.</td></tr>
+    <tr><td><code>--guest-max-timeout-ms</code></td><td>60,000</td><td>The longest deadline a method may declare; longer declarations run to this.</td></tr>
+    <tr><td><code>--guest-memory-bytes</code></td><td>128 MiB</td><td>Memory one guest instance may reach.</td></tr>
+    <tr><td><code>--max-transaction-bytes</code></td><td>32 MiB</td><td>The largest effects one write may commit; larger ones fail <code>413 transaction_too_large</code> before anything is proposed. Checked at startup against <code>--raft-max-frame-bytes</code> (it must fit four times over), and when a peer dials.</td></tr>
+  </tbody>
+</table>
+
+<p>The guest flags bound wall-clock time and memory only. A call's instruction budget follows from its method's declared deadline, the same on every member, so a call that fits on one member fits on all.</p>
+
+<h2 id="durability">Durability and storage</h2>
+
+<ul>
+  <li><code>--fsync on</code> (the default) makes every acknowledged write durable on a quorum. <code>off</code> survives process crashes but not power loss.</li>
+  <li>With three or more voters, the leader defers its own log flush while followers alone form a majority (<code>--leader-flush lazy</code>, the default): one fsync per write on the critical path.</li>
+  <li>Snapshots are taken every 10,000 entries, after 16 MiB applied or after 5 minutes; data files compact themselves online. The defaults suit most deployments.</li>
+  <li>If storage fails, the member stops accepting writes and linearizable reads (<code>503 storage_failed</code>), reports unready, and once the disk accepts writes again exits non-zero so its supervisor restarts it. Acknowledged writes are not lost: they live on a quorum.</li>
+</ul>
+
+<h2 id="upgrades">Upgrading Flower</h2>
+
+<p>Every member carries a <strong>compatibility contract</strong>: how entries apply, how snapshots and values encode, how peers frame messages, and the Wasm engine. <code>cargo flower membership</code> prints each member's:</p>
+
+<pre><code class="language-console">compatibility=wire7-state12-snapshot1-value4-wasmtime-49.0.0 build=0.1.0</code></pre>
+
+<ul>
+  <li><strong>Same contract, new build</strong> (a bugfix release): roll the cluster one member at a time — move leadership away, stop the member, start the new binary on the same directory, wait for it to be ready. Members of one contract join each other whatever their build.</li>
+  <li><strong>Another contract</strong>: members of different contracts refuse each other's connections, and a member refuses at start to open files another contract wrote (<code>incompatible_store</code>, naming both contracts). There is no in-place upgrade across a contract change: take a backup with the old build, stop every member, and <a href="backups.html#restore">restore</a> it with the new build into fresh directories.</li>
+</ul>
+
+<p>Read the release notes for a contract change before upgrading, and keep the old binary until the new cluster serves.</p>
+
+<h2 id="timing">Raft timing and read leases</h2>
+
+<p>The timing flags derive from <code>--raft-rtt-ms</code>, the round trip between the farthest members (0 on a LAN). With the defaults — 50 ms heartbeats, a 300 ms leader lease, 100–200 ms election timeouts and a 270 ms read lease — a failed leader is replaced in about half a second. Across regions, set <code>--raft-rtt-ms</code> to the measured round trip and let the rest follow. <code>--raft-read-lease-ms 0</code> disables read leases, making every linearizable read take a quorum round (see <a href="../concepts/consistency.html#leases">Leader leases</a>). Use identical timing on every member.</p>
+
+<h2 id="groups-and-partitions">Groups and partitions</h2>
+
+<pre><code class="language-bash">cargo flower group create east --members 2,3,4
+cargo flower partition create acme --group east
+cargo flower partition move acme --to west --wait
+cargo flower partition resize --groups east,west --op balance-2026-11
+cargo flower group prefer-leader west --node 3 --op west-on-3
+cargo flower partition          # list
+cargo flower transactions       # cross-group transactions in flight</code></pre>
+
+<ul>
+  <li>A group runs on a subset of the root group's members; every server process is a root member.</li>
+  <li><code>partition create</code> places a database on a group — adopting it in place if it already exists in <code>root</code>. Clients keep using the database name.</li>
+  <li><code>partition move</code> copies the database while it serves, freezes it briefly, and cuts over; calls during the freeze answer <code>503 partition_moving</code>. A move that cannot freeze within <code>--partition-freeze-max-ms</code> (30 s) aborts on its own; <code>partition abort</code> stops one by hand. The database's managed-key catalog moves with it.</li>
+  <li><code>partition resize</code> balances partition counts over the named active groups. It persists the plan and starts durable moves; inspect them with <code>partition</code>. Retrying the same <code>--op</code> returns the original plan. Finish pending partition operations before starting another resize.</li>
+  <li>New groups spread their preferred leaders over their members. <code>group prefer-leader</code> selects a voter, or disables placement for that group when <code>--node</code> is omitted. Placement waits for the target to catch up and suspends during catalog outages. <code>serve --leader-placement off</code> disables it on a host.</li>
+  <li>Every change takes an <code>--op</code> ID (defaulting to the operation and name), so repeating a command is safe.</li>
+</ul>

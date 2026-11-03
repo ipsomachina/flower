@@ -1,0 +1,73 @@
+<h1>Transactions and partitions</h1>
+<p class="lede">A mutation is atomic within one database. A transaction runs mutations in several databases — in one group or across groups — and commits all of them or none.</p>
+
+<h2 id="steps">Transactions are lists of steps</h2>
+
+<p>A transaction is a list of <strong>steps</strong>, each naming a database, a module, a mutation the module exposes over HTTP (<code>method</code>) and its arguments. Each step must target a <em>different</em> database. Send it to <code>POST /v1/transaction</code>:</p>
+
+<pre><code class="language-bash">curl -s http://127.0.0.1:8080/v1/transaction -H 'content-type: application/json' -d '{
+  "steps": [
+    {"db": "demo",    "module": "tasks", "method": "complete_task", "args": {"id": "eggs"}},
+    {"db": "archive", "module": "tasks", "method": "add_task",      "args": {"id": "eggs", "title": "Buy eggs"}}
+  ],
+  "idempotency_key": "archive-eggs"
+}'</code></pre>
+
+<pre><code class="language-json">{"ok":true,"value":[{"done":true,"title":"Buy eggs"},{"done":false,"title":"Buy eggs"}],"revision":6,"position":44,"revisions":{"archive":1,"demo":6},"duplicate":false}</code></pre>
+
+<p><code>value</code> holds each step's result in order, and <code>revisions</code> the revision each database reached. If any step fails, nothing commits anywhere, and the answer is that step's failure, with HTTP 422 like any call's own failure:</p>
+
+<pre><code class="language-json">{"ok":false,"revision":6,"position":0,"code":"TASK_EXISTS","message":"a task with this ID already exists","duplicate":false}</code></pre>
+
+<p>The same transaction from the CLI and from Rust:</p>
+
+<pre><code class="language-bash">cargo flower transaction \
+  --steps '[{"db":"demo","module":"tasks","method":"add_task","args":{"id":"jam","title":"Jam"}},
+            {"db":"archive","module":"tasks","method":"add_task","args":{"id":"jam","title":"Jam"}}]'</code></pre>
+
+<pre><code class="language-rust" data-include="examples/client/src/lib.rs#transaction"></code></pre>
+
+<h2 id="semantics">What a transaction guarantees</h2>
+
+<ul>
+  <li><strong>All or nothing.</strong> Every step commits, or none does.</li>
+  <li><strong>Steps are isolated from each other.</strong> Each step prepares in its own session against its own database; a step never sees another step's writes. Pass whatever a later step needs in its arguments.</li>
+  <li><strong>Each database stays consistent.</strong> Steps are validated against the latest state of their database at commit, just like mutations. Transactions take no <code>expected_revision</code>.</li>
+  <li><strong>Retries are safe.</strong> An <code>idempotency_key</code> works as for mutations: a retry answers the recorded outcome with <code>"duplicate": true</code>. Transactions accept only plain keys, not scoped <code>f1:</code>/<code>f2:</code> IDs.</li>
+  <li>Steps call what each module exposes over HTTP (<code>http</code> on the mutation; anything else answers 404 <code>UNKNOWN_METHOD</code>), under the caller's credentials, and each module's authorization hook decides as for a single call.</li>
+  <li><strong>One deadline.</strong> The whole transaction — every step and everything it nests — runs under one deadline: 60 seconds, or less when the caller's <code>x-flower-timeout-ms</code> says so.</li>
+  <li><strong>Bounded by size, not by count.</strong> There is no limit on the number of steps. What bounds a transaction is the size of what it commits: an entry larger than the operator's <code>--max-transaction-bytes</code> (32 MiB by default) fails with <code>413 transaction_too_large</code> before anything is proposed, naming the measured and allowed sizes. The same bound applies to a single mutation's writes.</li>
+</ul>
+
+<h3 id="within-a-group">Within one group</h3>
+
+<p>When every database lives in the same Raft group — the usual case, since unplaced databases all live in <code>root</code> — the transaction commits as one log entry at one position. Watchers of each database see the change at that database's new revision.</p>
+
+<h3 id="across-groups">Across groups</h3>
+
+<p>When the databases live in different groups, the first step's group coordinates a two-phase commit: it records the transaction durably, asks each participant group to prepare, decides, and has every participant finish. A participant persists its read and write footprint, including the transitive source dependencies behind cached derived values. Every replica checks that same footprint, even when its own derived cache differs. Independent writes can continue, including writes that store retry receipts or maintain unrelated derived values. Conflicting writes wait within their deadlines.</p>
+<p>Timer and queue reads protect the rows and ranges they actually inspected; they do not block unrelated writes merely because they are volatile for query caching. Reads outside the snapshot (retained history or native untracked reads), cached derived values with untracked dependencies, scans over derived-cache entries, oversized footprints and older derived footprints without source proofs retain a whole-database fence. Deployments, partition freezes and a second distributed prepare of the same database still wait; the second prepare gives up after a second with <code>transaction_conflict</code>. Reads never wait, and never see prepared but undecided state.</p>
+
+<ul>
+  <li>The answer carries <code>positions</code>: the log position in each participant group.</li>
+  <li>Each group applies its part on its own, so a reader that looks at two groups in quick succession may briefly see one side committed before the other. Atomicity is about outcomes, not about a single instant of visibility across groups.</li>
+  <li>If the coordinator fails, participants that prepared ask it for the decision; undecided transactions in which every participant prepared commit, others abort. Operators can list and abort stuck transactions with <code>cargo flower transactions</code>.</li>
+</ul>
+
+<div class="callout">
+<p><span class="callout-title">Planned in the guest</span> A module can also plan a transaction itself. <code>Transaction::new(name, planner).args(schema)</code> declares a raw planner, a function from the arguments to a <code>Plan</code> of calls; listed among the app's components and declared <code>.http()</code>, it answers <code>POST /v1/mutate</code> under its name: the planner runs under its deadline, and its calls run in one session and commit together. There is no typed-planner macro: a planner validates and encodes its arguments by hand.</p>
+</div>
+
+<h2 id="partitions">Partitions</h2>
+
+<p>Placing a database in its own group — making it a <a href="databases.html#named-partitions-and-groups">named partition</a> — changes where it runs, not how you call it. Clients keep naming the database; the server routes each call to the owning group. Reasons to partition:</p>
+
+<ul>
+  <li><strong>Isolation.</strong> A busy tenant's writes queue on its group's leader, not on everyone's.</li>
+  <li><strong>Scale.</strong> Each group has its own leader and log, so write throughput grows with groups placed on different servers.</li>
+  <li><strong>Placement.</strong> A group's members can be the servers in one region.</li>
+</ul>
+
+<p>The cost is that work spanning partitions in different groups becomes a cross-group transaction, with the locking described above. Design partitions so that most mutations touch one database.</p>
+
+<p>Operators create groups and place, move and retire partitions with <code>cargo flower group</code> and <code>cargo flower partition</code>; see <a href="../guides/operations.html#groups-and-partitions">Operating a cluster</a>. While a partition moves, its calls briefly answer <code>503 partition_moving</code> with <code>Retry-After: 1</code>; after the move, the old owner answers <code>partition_moved</code> and the server retries at the new owner for you.</p>

@@ -1,0 +1,92 @@
+<h1>Errors and retries in clients</h1>
+<p class="lede">Every failed call falls into one of three cases: the application said no, nothing ran, or you cannot tell. Retrying is only right in the last two, and in the last one only with the same request ID.</p>
+
+<h2 id="three-cases">Three cases</h2>
+
+<table>
+  <thead><tr><th>Case</th><th>What you see over HTTP</th><th>What to do</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><strong>The application said no</strong></td>
+      <td><strong>422</strong> with <code>"ok":false</code>: the call's own failure, for queries, mutations and transactions alike. Your method's <code>code</code>, <code>message</code> and <code>details</code>; <code>INVALID_ARGUMENT</code> with <code>details.path</code> for arguments that do not match; <code>stale_revision</code>; <code>deadline_exceeded</code> when the call ran past its own declared deadline. Also 403 (authorization), 404 <code>UNKNOWN_METHOD</code>, 400 <code>bad_request</code> (malformed body), 413 (too large) and 415 (no JSON content type).</td>
+      <td>Never retry blindly: the same request gets the same answer. Show it, or fix the call.</td>
+    </tr>
+    <tr>
+      <td><strong>Nothing ran</strong></td>
+      <td><strong>503</strong> with <code>overloaded</code> (and <code>Retry-After</code>), <code>caller_deadline_exceeded</code> (your own deadline passed first), <code>quorum</code>, <code>forward</code>, <code>recovering</code>, <code>rejoining</code>, <code>stale_replica</code>, <code>storage_failed</code>, <code>leadership_transfer</code>, <code>partition_moving</code>, <code>instantiation_failed</code>, <code>module_unavailable</code>; a 429 from an operator stream.</td>
+      <td>Retry after a delay, honouring <code>Retry-After</code>; another member may answer sooner.</td>
+    </tr>
+    <tr>
+      <td><strong>You cannot tell</strong></td>
+      <td>A timeout, a dropped connection, a cancelled request, <code>503 leader_isolated</code>, <code>503 forward_failed</code>.</td>
+      <td>A write may have committed. Retry <strong>with the same request ID</strong>: if it committed, the retry answers the original outcome with <code>"duplicate": true</code>.</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>Queries never change anything, so they are always safe to retry. Mutations and transactions are safe to retry with their request ID — which is why you should give every write one.</p>
+
+<p>Over HTTP, the bodies look like this (all live answers):</p>
+
+<pre><code class="language-json">{"ok":false,"revision":10,"position":32,"code":"INSUFFICIENT_FUNDS","message":"the balance is too low","details":10,"duplicate":false}   // 422
+{"code":"INVALID_ARGUMENT","details":{"path":["amount"]},"message":"arguments for `transfer` invalid at $.amount: integer below minimum","ok":false}   // 422
+{"ok":false,"revision":12,"position":48,"code":"stale_revision","message":"expected revision 3 but the database is at 12","duplicate":false}   // 422
+{"code":"UNKNOWN_METHOD","message":"`methods` has no `nope` callable over HTTP (declared `http`)","ok":false}   // 404
+{"code":"UNKNOWN_METHOD","message":"database `bank` has no module `nomod`","ok":false}   // 404
+{"code":"UNKNOWN_METHOD","message":"no database `nowhere` here","ok":false}   // 404
+{"code":"bad_request","message":"Failed to parse the request body as JSON: EOF while parsing a value at line 1 column 12","ok":false}   // 400
+{"code":"caller_deadline_exceeded","message":"the caller's deadline passed","ok":false}   // 503</code></pre>
+
+<p>A mutation's own failure carries the revision and log position its failed outcome was recorded at; a failure decided before the call ran, such as <code>INVALID_ARGUMENT</code>, carries neither.</p>
+
+<h2 id="flower-client">What <code>flower-client</code> does for you</h2>
+
+<p>With retries on (<code>.retry(Retry::Default)</code> on the builder, or <code>RequestOptions::retrying()</code> / <code>MutationOptions::retrying()</code> per call), the client:</p>
+
+<ul>
+  <li>retries transport errors, attempt timeouts, 429, 502, 504 and every 503 except <code>forward</code>, up to 8 attempts with equal-jitter exponential backoff from 250 ms to 30 s;</li>
+  <li>retries overload refusals on their own budget — 60 seconds by default, not counted against the attempts — waiting at least what <code>Retry-After</code> asks;</li>
+  <li>sends the same request ID, and the same body, on every attempt of a mutation;</li>
+  <li>never retries a 200 or a 422 (so never a business failure), a 401 or 403, or any other status;</li>
+  <li>stops at the call's <code>deadline</code> and when its <code>CancellationToken</code> fires.</li>
+</ul>
+
+<p><code>RetryPolicy</code> tunes all of it: <code>attempts</code>, <code>delays(initial, max)</code>, <code>attempt_timeout</code>, <code>until(instant)</code>, <code>through_overload</code> and <code>overload_budget</code>. <code>client.overloads()</code> counts the load refusals seen so far, which is a good signal to slow down.</p>
+
+<h2 id="the-error-type">The error type</h2>
+
+<p>Every call returns <code>Result&lt;_, flower_client::FlowerError&gt;</code>:</p>
+
+<table>
+  <thead><tr><th>Variant</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td><code>Business { code, message, revision, position, details }</code></td><td>The call's own failure, and only that: a 422 answer carrying the <code>"ok":false</code> envelope, from a query, a mutation or a transaction.</td></tr>
+    <tr><td><code>Server { code, message }</code></td><td>Any other non-2xx answer: <code>UNKNOWN_METHOD</code>, <code>bad_request</code>, a failure of the server itself. A body that is not JSON (a proxy's page, the 413 body limit) gives <code>code: "status 413"</code> and the text.</td></tr>
+    <tr><td><code>Auth(_)</code></td><td>401 or 403. The server's body (<code>unauthorized</code>, <code>ACCESS_DENIED</code>…) is not kept.</td></tr>
+    <tr><td><code>RetryExhausted(_)</code></td><td>Retryable refusals until the policy gave up — or the first one when retries are off.</td></tr>
+    <tr><td><code>Forward { leader }</code></td><td>The member could not reach any leader.</td></tr>
+    <tr><td><code>Timeout</code>, <code>Transport(_)</code>, <code>Cancelled</code></td><td>No answer: unknown outcome for a write.</td></tr>
+    <tr><td><code>Decode(_)</code></td><td>The answer did not decode into the type you asked for.</td></tr>
+    <tr><td><code>HistoryChanged</code>, <code>Engine(_)</code></td><td>Offline replicas only.</td></tr>
+  </tbody>
+</table>
+
+<pre><code class="language-rust" data-include="examples/client/src/lib.rs#errors"></code></pre>
+
+<p>Declared errors decode into the method's own error enum when you call through its descriptor (<code>client.call</code>, or the <code>*_declared</code> calls); see <a href="rust-client.html#typed-calls">typed calls</a>. A variant marked <code>#[flower(retryable)]</code> answers <code>true</code> from its generated <code>is_retryable()</code> — use it for application-level "try again" answers such as a transient upstream condition the method reports.</p>
+
+<h2 id="request-ids-across-restarts">Request IDs across restarts</h2>
+
+<p>The client's retries happen within one call. If your process can crash between sending a write and learning its outcome, the request ID must outlive the process: derive it from the intent, store it with the intent, and send it again on restart. A scoped ID from <code>retry_identity</code> adds a server-side check that a reused ID carries the same request:</p>
+
+<pre><code class="language-rust" data-include="examples/client/src/lib.rs#scoped"></code></pre>
+
+<p>Receipts last for the database's retry window — by default 24 to 27 hours. A retry after that runs as a new write.</p>
+
+<h2 id="optimistic-concurrency">Stale revisions</h2>
+
+<p>A mutation sent with <code>expected_revision</code> fails with <code>Business { code: "stale_revision", revision, .. }</code> when the database has moved on; the error's <code>revision</code> is the current one. Retrying the same request can never succeed: re-read, decide again, and send a new request.</p>
+
+<h2 id="from-other-languages">From other languages</h2>
+
+<p>Any HTTP client works the same way. Send <code>Content-Type: application/json</code>, put a stable <code>idempotency_key</code> in every write's body, and set <code>x-flower-timeout-ms</code> to the time budget. Inspect the structured problem's origin, execution certainty and retry advice alongside status and code. A 422 can report a declared application error, SQL validation or budget failure, or another host refusal; status alone does not identify a declared error. The request-body limit's 413 can answer in plain text. The <a href="../reference/http.html">HTTP reference</a> lists the endpoints and response fields.</p>

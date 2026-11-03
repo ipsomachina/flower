@@ -1,0 +1,40 @@
+<h1>Time</h1>
+<p class="lede">Each invocation sees one fixed clock reading. Results that depend on time say so — either by polling the clock or by declaring the instant they will change — and caches, derived values and watches follow those declarations.</p>
+
+<h2 id="the-invocation-clock">The invocation clock</h2>
+
+<p><code>ctx.now()</code> and <code>ctx.clock()</code> return the same value: the invocation's timestamp in milliseconds since the Unix epoch, as an <code>f64</code>. It does not advance while your code runs, and nested calls see the same reading. They differ only in what they tell the engine:</p>
+
+<ul>
+  <li><code>now()</code> says "my result depends on the current time". The result <strong>polls</strong> the clock: it is never served from cache at a later instant, and a watch on it re-evaluates every 250 ms.</li>
+  <li><code>clock()</code> reads the time without that implication. Pair it with <code>changes_at</code> when your result changes at a known instant.</li>
+</ul>
+
+<h2 id="changes-at">Declaring when a result changes</h2>
+
+<p><code>ctx.changes_at(Some(t))</code> declares that the result may change at instant <code>t</code> even if no data changes. The result is valid from its evaluation until then: caches serve it, and at <code>t</code> it is evaluated again and watches refresh.</p>
+
+<pre><code class="language-rust" data-include="examples/snippets/src/time.rs#changes-at"></code></pre>
+
+<p>The <strong>earliest declaration wins</strong>. Declarations from everything an invocation reads — derived values, other modules' methods, the authorization decision — combine, and a later instant never lifts an earlier one. That is what you want: a session that lasts an hour does not extend a token check that expires in a minute. <code>changes_at(None)</code> declares nothing. A declared instant at or before the evaluation's own clock counts as polling.</p>
+
+<p>When the value changes continuously, poll instead:</p>
+
+<pre><code class="language-rust" data-include="examples/snippets/src/time.rs#now"></code></pre>
+
+<h2 id="derived-values-and-time">Derived values and time</h2>
+
+<p>A derived value keeps the time behaviour of its evaluation with its cached outcome, including what it inherited from the values it read. One that polled is served only at the instant it was computed; one that declared an instant is served until that instant, then evaluated again (keeping its pin if it is materialized). Every reader inherits both.</p>
+
+<h2 id="where-the-clock-comes-from">Where the clock comes from</h2>
+
+<ul>
+  <li><strong>Mutations</strong> take the leader's clock when the leader prepares them. A batch of mutations prepared together shares one reading, and a leader's writer never goes backwards. Node clocks are not synchronized distributed time: after a failover, the new leader's clock is what counts. Keep clocks synchronized with NTP.</li>
+  <li><strong>Queries</strong> take the clock of the member that evaluates them.</li>
+  <li><strong>Timers</strong> and queue <strong>leases</strong> are due times on the leader's clock, at least as late as requested; they are never exact.</li>
+  <li>A trusted gateway (a request carrying the admin token) may pass <code>timestamp_ms</code> to evaluate a call at a chosen time, for testing and replays. A watch uses it for its first snapshot only: its later refreshes read the serving member's clock, so clock-reading queries and token expiry keep moving.</li>
+</ul>
+
+<h2 id="authorization-and-time">Authorization decisions and time</h2>
+
+<p>An authorization hook's decision can expire too: a typed authenticator like <code>JwtBearer</code> declares the token's expiry, and a hook can return <code>until</code> or call <code>changes_at</code>. The server keeps a decision only until then, and an open watch is re-authorized at that instant — so a watch never outlives the token that opened it. See <a href="../guides/auth.html#decision-expiry">Authentication and authorization</a>.</p>

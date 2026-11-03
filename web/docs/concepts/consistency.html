@@ -1,0 +1,84 @@
+<h1>Revisions and consistency</h1>
+<p class="lede">Each database has one revision that moves with every committed change. Each query declares how fresh its answer must be — linearizable, or replica-local with or without a bound — and every member serves it accordingly.</p>
+
+<h2 id="revisions">Revisions and positions</h2>
+
+<p>A <strong>revision</strong> is a per-database counter that moves each time a mutation, transaction step, timer firing, task run or queue operation commits a change to that database. It identifies a state of one database; revisions of different databases are unrelated. A few things do <em>not</em> move it: deployments, business failures (which only record their outcome) and caches the engine fills while reading.</p>
+
+<p>A <strong>position</strong> is the index of the log entry a change committed in, in the log of the group that owns the database. Positions are what operators see in backups and Raft metrics; revisions are what applications usually care about.</p>
+
+<p>Where you see them:</p>
+
+<table>
+  <thead><tr><th>Answer</th><th>Revision information</th></tr></thead>
+  <tbody>
+    <tr><td><code>POST /v1/mutate</code></td><td><code>revision</code> and <code>position</code>, also on the mutation's own failures (HTTP 422).</td></tr>
+    <tr><td><code>POST /v1/transaction</code></td><td><code>revision</code>, <code>position</code>, <code>revisions</code> (per database) and, across groups, <code>positions</code> (per group).</td></tr>
+    <tr><td><code>POST /v1/watch</code></td><td>Every event carries the <code>revision</code> its value was computed at.</td></tr>
+    <tr><td><code>POST /v1/query</code></td><td>None. A query answer is exactly <code>{"ok":true,"value":…}</code>.</td></tr>
+  </tbody>
+</table>
+
+<h3 id="optimistic-concurrency">Optimistic concurrency</h3>
+
+<p>A mutation request may carry <code>expected_revision</code>. If the database has moved past it by the time the mutation commits, the call fails with <code>stale_revision</code> (HTTP 422, with the revision the database is at) and changes nothing:</p>
+
+<pre><code class="language-json">{"ok":false,"revision":1,"position":10,"code":"stale_revision","message":"expected revision 0 but the database is at 1","duplicate":false}</code></pre>
+
+<p> The check is database-wide: any change to the database moves its revision. Learn a revision from a previous mutation answer or a watch event. Most applications do not need this — a mutation's reads are validated at commit anyway — but it is useful for "save only if nobody changed anything since I looked" flows across several requests.</p>
+
+<h2 id="query-consistency">Query consistency</h2>
+
+<p>Consistency is part of a query's declaration:</p>
+
+<pre><code class="language-rust">#[query(http)] // linearizable
+fn balance(ctx: &amp;mut QueryCtx&lt;'_, '_&gt;, account: String) -&gt; Result&lt;Option&lt;u64&gt;&gt; { … }
+
+#[query(http, max_staleness_ms = 2000)] // ReplicaLocalWithin(2_000)
+fn leaderboard(ctx: &amp;mut QueryCtx&lt;'_, '_&gt;) -&gt; Result&lt;Vec&lt;Score&gt;&gt; { … }
+
+#[query(http, consistency = replica_local)] // ReplicaLocal
+fn catalog(ctx: &amp;mut QueryCtx&lt;'_, '_&gt;) -&gt; Result&lt;Vec&lt;Item&gt;&gt; { … }</code></pre>
+
+<p>To serve one callback under two consistencies, declare a twin: <code>BALANCE.named("balance_nearby").consistency(Consistency::ReplicaLocalWithin(2_000))</code> (see <a href="methods.html#queries">Queries</a>).</p>
+
+<table>
+  <thead><tr><th>Consistency</th><th>Guarantee</th><th>How a member serves it</th></tr></thead>
+  <tbody>
+    <tr><td><code>Linearizable</code> (the default)</td><td>Reflects every write that completed before the query began, whichever members served the write and the query.</td><td>The leader answers under its read lease or after a quorum round; a follower asks the leader for the commit index, waits until it has applied it, then reads its own copy.</td></tr>
+    <tr><td><code>ReplicaLocalWithin(ms)</code></td><td>At most <code>ms</code> milliseconds stale.</td><td>From its own state while within the bound; otherwise it proves a fresh read first (and reports staleness 0), or answers <code>503 stale_replica</code> if it cannot.</td></tr>
+    <tr><td><code>ReplicaLocal</code></td><td>Some committed state, possibly far behind; never ahead of what is committed.</td><td>Immediately, from its own state.</td></tr>
+  </tbody>
+</table>
+
+<p>Replica-local answers carry an <code>x-flower-staleness-ms</code> header: the member's estimate in milliseconds, <code>0</code> when it proved a fresh read, or <code>unknown</code>. Linearizable answers never carry it.</p>
+
+<p>A caller can <strong>tighten</strong> a replica-local query's bound with the <code>x-flower-max-staleness-ms</code> request header (or <code>RequestOptions::max_staleness</code> in the Rust client), but can never loosen it, and cannot make a linearizable query replica-local. <code>x-flower-max-staleness-ms: 0</code> asks for a proven-fresh answer from a replica-local query.</p>
+
+<h2 id="read-your-writes">Read-your-writes</h2>
+
+<p>Linearizable queries always see the caller's completed writes, on any member. Replica-local queries may not: a follower that has not yet applied your write answers from before it. Use replica-local queries for reads that can lag — dashboards, browsing, leaderboards — and keep checks that guard money or stock inside mutations, which always run on the leader against the latest state.</p>
+
+<div class="callout tip">
+<p><span class="callout-title">Pattern</span> Goblin Pizza (<code>examples/goblin-pizza</code>) declares <code>pizza.shop</code> as a linearizable query and <code>pizza.shop.local</code> as its replica-local twin over the same callback. Clients browse with the local one and buy with mutations.</p>
+</div>
+
+<h2 id="leases">Leader leases and read leases</h2>
+
+<p>Proving a read linearizable normally takes a round trip to a quorum. Flower avoids most of them with a <strong>read lease</strong>: after a quorum round, the leader may answer linearizable reads on its own for a short time (by default 270 ms, nine tenths of the 300 ms leader lease), renewing the lease in the background. A leadership transfer or a membership change ends the lease.</p>
+
+<p>The lease relies on member clocks advancing at roughly the same rate and never stopping while the process runs. A host that suspends a running member (to RAM, say) can make it serve one stale read when it wakes; set <code>--raft-read-lease-ms 0</code> on such hosts to make every fresh read take a quorum round. The timing flags are described in <a href="../guides/operations.html#timing">Operating a cluster</a>.</p>
+
+<h2 id="routing">Routing and failover</h2>
+
+<p>Any member accepts any call. Queries run where they arrive, as declared. Writes, transactions and other leader-only requests are forwarded by a follower to the leader and the leader's answer is relayed verbatim; every answer names the leader's URL in <code>x-flower-leader-url</code>, so clients can go there directly next time (the Rust client does this with <code>leader_routing(true)</code>).</p>
+
+<p>When a leader fails, a new one is elected in about half a second with the default timing. Writes sent to a follower meanwhile are held and forwarded when the new leader appears. A few answers mean the outcome of a write is <strong>unknown</strong> — the write may or may not have committed:</p>
+
+<ul>
+  <li><code>503 leader_isolated</code>: the leader lost its quorum for longer than its lease plus the election timeout (400 ms by default) and gave up the writes it held.</li>
+  <li><code>503 forward_failed</code>: a forward broke after the request may have reached the leader.</li>
+  <li>A timeout or a dropped connection.</li>
+</ul>
+
+<p>Retry those with the <strong>same</strong> request ID, and the retry answers the original outcome if there was one. See <a href="retries.html">Retries and receipts</a>.</p>

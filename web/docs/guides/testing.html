@@ -1,0 +1,65 @@
+<h1>Testing applications</h1>
+<p class="lede">Test guest logic natively against the real engine, without building Wasm or starting a server; test clients against a scripted transport; test workers against an in-memory queue; and keep a few end-to-end tests against a real node.</p>
+
+<h2 id="guests-in-process">Guests in process</h2>
+
+<p>With the SDK's <code>native-host</code> feature, the engine can run your <code>App</code> directly as native Rust: same dispatch, same codecs, same host operations, same storage — no Wasm. Build the guest crate as an <code>rlib</code> too, as the <a href="../quickstart.html#write-a-module">quickstart</a> does, so its tests can link it, and add two dev-dependencies:</p>
+
+<figure class="code">
+<figcaption>Cargo.toml</figcaption>
+<pre><code class="language-toml">[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+flower-sdk = { path = "../flower/crates/flower-sdk" }
+
+[dev-dependencies]
+flower-engine = { path = "../flower/crates/flower-engine" }
+flower-sdk = { path = "../flower/crates/flower-sdk", features = ["native-host"] }</code></pre>
+</figure>
+
+<p>Then deploy the module into an engine over a temporary file and call it, as the server would. This test runs the quickstart's module, building its calls from the argument structs and descriptors the attributes declared:</p>
+
+<figure class="code">
+<figcaption>tests/tasks.rs</figcaption>
+<pre><code class="language-rust" data-include="examples/quickstart/tests/tasks.rs#test"></code></pre>
+</figure>
+
+<ul>
+  <li><code>NativeRuntime::new(&amp;APP)</code> runs the app in-process; <code>.manifest()</code> is the manifest the Wasm build would embed. Add <code>.with_crypto(…)</code> for guests that use <a href="crypto.html">crypto</a>.</li>
+  <li><code>invoke_mutation</code> and <code>invoke_query</code> take definition names and values; failures come back with the guest's code. A descriptor's <code>name</code> and its argument struct's <code>encode()</code> keep the test in step with the module.</li>
+  <li>Calls name definitions directly, so a test can call what clients cannot — a timer's handler, a method without <code>http</code>. Set <code>external: true</code> in <code>CallOptions</code> (a <code>MutationOptions</code> carries one as <code>call</code>) to resolve the name as a client's HTTP call would.</li>
+  <li><code>CallOptions</code> also sets <code>credentials</code> (to exercise the authorization hook), an asserted <code>principal</code>, a <code>deadline</code>, and a fixed <code>timestamp_ms</code> for time-dependent logic.</li>
+  <li>Native code is not sandboxed: a panic in your method panics the test, and Wasm limits (the instruction budget a method's deadline buys, memory) do not apply. Keep at least one test against the built Wasm.</li>
+</ul>
+
+<p>Pure helpers — key building, validation, aggregate <code>add</code>/<code>remove</code> — are plain Rust: unit-test them directly.</p>
+
+<h2 id="clients">Clients with <code>MockTransport</code></h2>
+
+<p><code>flower_client::testing::MockTransport</code> answers scripted replies in order and records every request:</p>
+
+<pre><code class="language-rust" data-include="examples/client/src/lib.rs#mock"></code></pre>
+
+<p><code>MockReply</code> covers successes (<code>ok</code>), business failures (<code>failure</code>), HTTP errors (<code>error</code>), overload (<code>overloaded</code>), missing leaders (<code>forward</code>), server-sent event streams (<code>events</code>, <code>event_stream</code>) and hangs (<code>hang</code>, after the script runs out). Recorded requests expose their path, JSON body, headers and credentials, so you can assert on request IDs and deadlines.</p>
+
+<h2 id="workers">Workers with <code>FakeQueue</code></h2>
+
+<p>With <code>flower-worker</code>'s <code>testing</code> feature, <code>FakeQueue</code> implements the queue protocol in memory, with the server's claiming rules — due order, scopes, priorities, fencing, leases, the waiter line and chained claims — on Tokio's clock, so tests can run in paused time:</p>
+
+<pre><code class="language-rust" data-include="examples/client/src/lib.rs#fake-queue"></code></pre>
+
+<p>It can also refuse or fail polls and delay answers, to test backpressure and error paths. It does not model job names, groups or kept results.</p>
+
+<h2 id="end-to-end">End to end</h2>
+
+<p>For a few tests against the real thing, start a node in a temporary directory on free ports — <code>--http 127.0.0.1:0 --raft 127.0.0.1:0</code> — and read the addresses it prints:</p>
+
+<pre><code class="language-console">listening raft=127.0.0.1:52811
+listening http=127.0.0.1:52812</code></pre>
+
+<p>Wait until <code>/health/ready</code> answers 200, deploy the built Wasm with <code>cargo flower deploy</code> or <code>FlowerClient::deploy</code>, and call it. Pass <code>--timer-sweep-ms 100</code> to make timers fire quickly. Flower's own CLI tests (<code>crates/cargo-flower/tests/cli.rs</code>) work this way.</p>
+
+<div class="callout tip">
+<p><span class="callout-title">Every example in these docs is tested</span> The guest snippets compile for <code>wasm32</code>, the client snippets compile natively, and the tests on this page run, from <code>web/docs/examples</code> in the repository.</p>
+</div>

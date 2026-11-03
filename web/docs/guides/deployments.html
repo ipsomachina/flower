@@ -1,0 +1,105 @@
+<h1>Deployments</h1>
+<p class="lede">A deployment replaces a module's code through the Raft log, atomically on every member. Build and plan offline, deploy in one call, or stage a large change and activate it when its indexes and derived values are ready.</p>
+
+<h2 id="build">Build</h2>
+
+<pre><code class="language-bash">cargo flower build                       # the one cdylib in the workspace
+cargo flower build --package tasks       # or name it
+cargo flower build --features auth --out-dir dist</code></pre>
+
+<p><code>build</code> compiles the package for <code>wasm32-unknown-unknown</code> (release profile by default), loads the module through the server's own Wasm backend, checks its imports and initialization, and reads the manifest it declares. Only then does it write <code>&lt;package&gt;.wasm</code> and <code>&lt;package&gt;.manifest.json</code> to <code>.flower/</code> (or <code>--out-dir</code>) and print the artifact's SHA-256. The manifest — collections, schemas, definitions, HTTP names, access, exports, imports, queues, keys — is generated from the module's declarations and embedded in the Wasm; the JSON copy is for reading, diffing and review.</p>
+
+<h2 id="plan">Plan</h2>
+
+<p><code>plan</code> checks a deployment offline, without a cluster, and exits non-zero when it would break something. It prints what the module declares and the content identity the deployment will have, which covers the code and its bindings (it is not the file's SHA-256):</p>
+
+<pre><code class="language-bash">cargo flower plan --wasm .flower/tasks.wasm --current deployed.manifest.json</code></pre>
+
+<pre><code class="language-console">collections=1 queries=1 mutations=2 derived=0 transactions=0 triggers=0 http=3
+bindings: none
+identity=f009ff3a4a23231886633bc7afd20700d1d00cf253c0cba80b0dff5f4047a884
+compatible=true</code></pre>
+
+<ul>
+  <li><code>--current</code> takes the deployed manifest (or the deployed Wasm) and diffs the contracts: removed collections or definitions, changed key types and changed kinds are incompatible.</li>
+  <li><code>--with MODULE=FILE</code> (repeatable) adds the database's other modules, so the cross-module link check runs offline; <code>--module</code> names the module being deployed.</li>
+  <li><code>--bind SLOT=MODULE</code> / <code>--bindings FILE</code> bind import slots; bindings change the content identity, which <code>plan</code> prints.</li>
+  <li><code>cargo flower contract inspect --manifest M</code> prints a manifest; <code>contract diff --from A --to B</code> diffs two, marking incompatible lines with <code>!</code> (it always exits 0: use <code>plan</code> to gate).</li>
+</ul>
+
+<p>The server re-validates everything on deploy; <code>plan</code> only tells you earlier.</p>
+
+<h2 id="deploy">Deploy</h2>
+
+<pre><code class="language-bash">export FLOWER_ENDPOINT=https://flower.internal:8080   # every command's default server
+export FLOWER_ADMIN_TOKEN=…                          # from your secret store
+cargo flower deploy --db shop --module shop --wasm .flower/shop.wasm --bind inventory=warehouse</code></pre>
+
+<p>The CLI runs the same preflight as <code>plan</code> and sends nothing if it fails. The leader then validates the module by building its runtime, checks links with the database's other modules (<code>409 MODULE_CONFLICT</code>), builds any new indexes over existing rows, and proposes the activation as one log entry. Every member switches at the same position. Deploying identical content again is a no-op, so retrying a deploy is safe. Two deploys of the same module at once: the second gets <code>409 deployment_in_progress</code>. Bodies are limited to 64 MiB (<code>--deploy-max-bytes</code>).</p>
+
+<h3 id="what-happens-to-traffic">What happens to traffic</h3>
+
+<ul>
+  <li><strong>Queries</strong> read either the old code with the old data or the new code with the new data, never a mix.</li>
+  <li><strong>Mutations</strong> prepared under the old code but not yet committed are prepared again under the new code, transparently.</li>
+  <li><strong>Derived values</strong> computed by the old code are re-evaluated on their next read (pinned ones eagerly); aggregates with an unchanged <code>VERSION</code> keep their groups.</li>
+  <li><strong>Watches</strong> re-evaluate; a watch whose method the new code removed, or no longer declares <code>http</code>, ends with <code>UNKNOWN_METHOD</code>.</li>
+  <li><strong>Timers</strong> fire with whatever code is current when they come due.</li>
+</ul>
+
+<h2 id="changing-schemas">Changing collections and indexes</h2>
+
+<ul>
+  <li><strong>Adding</strong> collections, indexes and methods, or exposing a method over HTTP, is always fine. New indexes are built over existing rows before activation.</li>
+  <li><strong>Changing a collection's value schema</strong> is accepted: existing rows stay as they are and stay readable, and new writes validate against the new schema. Migrating old rows is application work — a maintenance task that rewrites a page at a time is a good fit. Make new fields <code>#[flower(default)]</code> so old rows still decode.</li>
+  <li><strong>An index's fields are fixed by its name.</strong> To index different fields, add an index under a new name and stop using the old one. (<code>plan</code> does not catch a changed index; the server refuses it.)</li>
+  <li><strong>Removing</strong> collections or indexes retires them; the leader deletes their entries lazily in the background (<code>cargo flower deployment … collect</code> forces it).</li>
+</ul>
+
+<h2 id="staged-deployments">Staged deployments</h2>
+
+<p>When the new code needs large indexes built or many derived values recomputed, stage it first. The old code keeps serving, writes go to both old and new indexes while the staging builds, and you activate when it is ready:</p>
+
+<pre><code class="language-bash">D="cargo flower deployment --db shop --module shop"
+$D stage --wasm .flower/shop.wasm --manifest .flower/shop.manifest.json
+$D advance --max-records 4096       # repeat until ready=true
+$D status
+$D activate                         # or: $D cancel
+$D collect                          # later: delete what the old code left behind</code></pre>
+
+<p><code>stage</code>, <code>advance</code> and <code>status</code> print the staging's progress; <code>activate</code> prints the revision and log position it switched at, after which <code>status</code> reports none:</p>
+
+<pre><code class="language-console">ready=true position=0/0 retired=0 identity=9a849945…5840dc7f1 scanned=0 graph=0/0 rebuilt=0
+revision=11 position=42
+staging=none</code></pre>
+
+<ul>
+  <li><code>stage</code> validates the module like a deploy (it requires <code>--manifest</code>, and skips the CLI's local preflight).</li>
+  <li><code>advance</code> builds a bounded page of index backfill (up to 65,536 records), then rebuilds derived roots under the new code (up to 1,024 a step). Each step is a log entry, so a new leader continues where the old one stopped.</li>
+  <li><code>activate</code> re-checks links and switches atomically; it is refused until the staging is ready.</li>
+  <li>A one-call <code>deploy</code> of the same module replaces any open staging.</li>
+</ul>
+
+<p>The admin dashboard (<code>/admin</code>) shows open stagings with buttons to advance, activate and cancel.</p>
+
+<h2 id="bindings">Bindings</h2>
+
+<p>A module that imports a slot (<code>$inventory</code>) must be deployed with a binding for it: <code>--bind inventory=warehouse</code>. Bindings are part of the deployed manifest and its identity; to rebind, redeploy the same artifact with another binding. See <a href="../concepts/modules.html#slots-and-bindings">Slots and bindings</a>.</p>
+
+<h2 id="removing-a-module">Removing a module</h2>
+
+<pre><code class="language-bash">cargo flower modules --db shop                                 # list
+cargo flower modules --db shop remove --module legacy
+cargo flower modules --db shop remove --module legacy --purge</code></pre>
+
+<p>Removal takes away the module's code, HTTP names, hooks and derived values through the log. Its records, indexes, queues and timers stay, unreachable — its due timers are held rather than spending their attempts — and come back if you deploy the module again. A module that another module imports from cannot be removed.</p>
+
+<p><code>--purge</code> deletes the data too, in the background, a page at a time: records and indexes, timers, maintenance-task state, and the queues the module declared that no other module declares, with their jobs. Until the purge ends, <code>modules</code> lists the module as purging, the module cannot be deployed again, no module declaring one of those queues can be deployed, and every operation on them — a guest's or a worker's — fails <code>queue_purging</code>.</p>
+
+<h2 id="from-ci">From CI</h2>
+
+<p>A typical pipeline builds with <code>--locked</code>, runs <code>plan --current</code> against the manifest stored from the last release (failing the job on exit 1), deploys with <code>FLOWER_ENDPOINT</code> and <code>FLOWER_ADMIN_TOKEN</code> from the CI secret store, and stores the new manifest for next time. <code>cargo flower modules</code> shows each module's deployed identity, which matches the <code>identity</code> <code>plan</code> printed.</p>
+
+<div class="callout">
+<p><span class="callout-title">Module code, not Flower itself</span> Deploying a module never restarts anything. Upgrading the Flower binary is a different operation, with its own rule: a member refuses to open files written under another compatibility contract. See <a href="operations.html#upgrades">Upgrading Flower</a>.</p>
+</div>

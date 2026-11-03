@@ -1,0 +1,148 @@
+@font-face {
+  font-family: "Bodoni Moda";
+  src: url("fonts/bodoni-moda.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+:root {
+  --accent: #00f;
+  --page-background: #fff;
+  color-scheme: light dark;
+  color: #000;
+  background-color: #fff;
+  font-family: Georgia, "Times New Roman", serif;
+}
+
+a:link,
+a:visited {
+  color: #00f;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --accent: #80c0ff;
+    --page-background: #000;
+    color: #fff;
+    background-color: #000;
+  }
+
+  a:link,
+  a:visited {
+    color: #80c0ff;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  min-height: 100vh;
+  min-height: 100svh;
+  margin: 0;
+  padding: 64px 24px;
+  display: grid;
+  place-items: center;
+}
+
+.page {
+  width: 100%;
+  max-width: 40em;
+  display: flex;
+  flex-direction: column;
+  gap: 3em;
+}
+
+header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+
+h1 {
+  margin-top: 0.3em;
+  padding-left: 0.25em;
+  font: 400 clamp(1.75em, 7vw, 2.5em) "Bodoni Moda", Didot, "Times New Roman", serif;
+  font-kerning: normal;
+  letter-spacing: 0.25em;
+}
+
+.subtitle {
+  margin-top: 0.5em;
+}
+
+.introduction {
+  font-size: 1.5em;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75em;
+  margin-top: 1.5em;
+}
+
+.actions a {
+  display: inline-block;
+  padding: 0.7em 1em;
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  text-decoration: none;
+}
+
+.actions a.primary {
+  color: var(--page-background);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.actions a:hover {
+  text-decoration: underline;
+}
+
+a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+
+p + p {
+  margin-top: 0.5em;
+}
+
+main > section {
+  margin-top: 2em;
+}
+
+main > section:first-child {
+  margin-top: 0;
+}
+
+section + .introduction {
+  margin-top: 2em;
+}
+
+h2 {
+  font-size: 1em;
+}
+
+h2 + p {
+  margin-top: 0.5em;
+}
+
+footer {
+  font-size: 0.85em;
+}
+
+section#availability {
+  font-style: italic;
+}

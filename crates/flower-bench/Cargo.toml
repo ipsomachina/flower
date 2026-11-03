@@ -1,0 +1,59 @@
+[package]
+name = "flower-bench"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Goblin Pizza stress benchmark and live demo: real server processes, leader-kill chaos, an end-of-run business audit and a live view (v1 bench/ and examples/pizza-dashboard)"
+publish = false
+
+[[bin]]
+name = "flower-bench"
+path = "src/main.rs"
+
+[dependencies]
+flower-client = { version = "0.0.20261105", path = "../flower-client" }
+flower-worker = { version = "0.0.20261105", path = "../flower-worker" }
+# Reads the guest's manifest for deployment, as the worker's pizza test.
+flower-engine = { version = "0.0.20261105", path = "../flower-engine" }
+# The live view: a read-only page and its event stream on loopback.
+axum = "0.8"
+clap = { version = "4", features = ["derive", "env"] }
+futures-util = "0.3"
+serde = { version = "1", features = ["derive"] }
+# float_roundtrip: a report read back holds its figures to the bit, so
+# comparing a report with itself sees no change.
+serde_json = { version = "1", features = ["float_roundtrip"] }
+sha2 = "0.10"
+tempfile = "3"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "process", "signal", "sync", "time", "net", "io-util"] }
+# --auth: the run's Ed25519 signing key (the crate flower-crypto uses)
+# and the OS randomness it is drawn from, as is the key-wrapping key.
+ed25519-dalek = "2"
+getrandom = "0.2"
+# --cpu-profile: Rust frame names, demangled (already in the lockfile
+# through backtrace).
+rustc-demangle = "0.1"
+
+[dev-dependencies]
+reqwest = { version = "0.13", default-features = false }
+# The server's own JWT verifier checks the bench's tokens.
+flower-crypto = { path = "../flower-crypto" }
+# The fault suite speaks the peer protocol over TLS to a member's Raft
+# port, as members do (flower-cluster's provider and versions).
+tokio-rustls = { version = "0.26.5", default-features = false, features = ["aws-lc-rs", "tls12"] }
+
+# Server CPU and memory sampling, tying the servers' lifetime to the
+# bench's (a job object on Windows, the parent-death signal on Linux),
+# and --cpu-profile's stack walking on Windows (DbgHelp, thread
+# suspension and cycle counters).
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_System_JobObjects", "Win32_System_ProcessStatus", "Win32_System_Threading", "Win32_System_Diagnostics_Debug", "Win32_System_Diagnostics_ToolHelp", "Win32_System_Kernel", "Win32_System_SystemInformation", "Win32_System_WindowsProgramming"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[lints]
+workspace = true

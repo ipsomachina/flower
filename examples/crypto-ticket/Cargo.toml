@@ -1,0 +1,17 @@
+[package]
+license.workspace = true
+name = "crypto-ticket"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+description = "The ticket booth: managed keys, digests and entropy as a Flower guest (v1 examples/crypto-rs)"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+flower-sdk = { path = "../../crates/flower-sdk" }
+
+[lints]
+workspace = true

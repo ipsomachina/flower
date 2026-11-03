@@ -1,0 +1,724 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://flower.ipsomachina.com/docs/assets/protocol/v1.schema.json",
+  "title": "Flower protocol version 1",
+  "description": "The root validates call envelopes. Select the named $defs schema for each other payload. Runtime validators additionally enforce history, coverage and causal relationships. PreparedCommandV2 is a local client persistence format.",
+  "$ref": "#/$defs/CallEnvelope",
+  "$defs": {
+    "Counter": {
+      "type": "string",
+      "pattern": "^(?:0|[1-9][0-9]{0,18}|1[0-7][0-9]{18}|18[0-3][0-9]{17}|184[0-3][0-9]{16}|1844[0-5][0-9]{15}|18446[0-6][0-9]{14}|184467[0-3][0-9]{13}|1844674[0-3][0-9]{12}|184467440[0-6][0-9]{10}|1844674407[0-2][0-9]{9}|18446744073[0-6][0-9]{8}|1844674407370[0-8][0-9]{6}|18446744073709[0-4][0-9]{5}|184467440737095[0-4][0-9]{4}|18446744073709550[0-9]{3}|18446744073709551[0-5][0-9]{2}|1844674407370955160[0-9]{1}|1844674407370955161[0-4]|18446744073709551615)$(?![\\s\\S])"
+    },
+    "Incarnation": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/Counter"
+        },
+        {
+          "not": {
+            "const": "0"
+          }
+        }
+      ]
+    },
+    "ReadToken": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "database": {
+          "type": "string",
+          "minLength": 1
+        },
+        "group": {
+          "type": "string",
+          "minLength": 1
+        },
+        "incarnation": {
+          "$ref": "#/$defs/Incarnation"
+        },
+        "revision": {
+          "$ref": "#/$defs/Counter"
+        },
+        "position": {
+          "$ref": "#/$defs/Counter"
+        }
+      },
+      "required": [
+        "version",
+        "database",
+        "group",
+        "incarnation",
+        "revision",
+        "position"
+      ]
+    },
+    "WatchHistory": {
+      "type": "object",
+      "properties": {
+        "group": {
+          "type": "string",
+          "minLength": 1
+        },
+        "incarnation": {
+          "$ref": "#/$defs/Incarnation"
+        }
+      },
+      "required": [
+        "group",
+        "incarnation"
+      ]
+    },
+    "ProtocolInfo": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "version",
+        "capabilities"
+      ]
+    },
+    "Problem": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 999
+        },
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "origin": {
+          "enum": [
+            "application",
+            "authorization",
+            "admission",
+            "host",
+            "protocol"
+          ]
+        },
+        "execution": {
+          "enum": [
+            "not_started",
+            "decided",
+            "unknown"
+          ]
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "details": {},
+        "retry_after_ms": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 18446744073709551615
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "status",
+        "code",
+        "message",
+        "origin",
+        "execution",
+        "retryable"
+      ]
+    },
+    "CallEnvelope": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "value": {},
+        "revision": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 18446744073709551615
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "position": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 18446744073709551615
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "code": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "message": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "details": {},
+        "duplicate": {
+          "type": "boolean"
+        },
+        "revisions": {
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 18446744073709551615
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "positions": {
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 18446744073709551615
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "read_token": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ReadToken"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "ok": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "value"
+            ]
+          },
+          "else": {
+            "required": [
+              "code",
+              "message"
+            ],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "SyncBatch": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "since": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 18446744073709551615
+        },
+        "current": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 18446744073709551615
+        },
+        "incarnation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 18446744073709551615
+        },
+        "entries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "index": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 18446744073709551615
+              },
+              "write": {}
+            },
+            "required": [
+              "index",
+              "write"
+            ]
+          }
+        },
+        "snapshot": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "last_index": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 18446744073709551615
+                },
+                "bytes_b64": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "last_index",
+                "bytes_b64"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "version",
+        "since",
+        "current",
+        "incarnation",
+        "entries"
+      ]
+    },
+    "WatchSnapshot": {
+      "type": "object",
+      "properties": {
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 18446744073709551615
+        },
+        "id": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 18446744073709551615
+        },
+        "value": {},
+        "history": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WatchHistory"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "revision",
+        "value"
+      ]
+    },
+    "WatchPatch": {
+      "type": "object",
+      "properties": {
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 18446744073709551615
+        },
+        "id": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 18446744073709551615
+        },
+        "base": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 18446744073709551615
+        },
+        "patch": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        }
+      },
+      "required": [
+        "revision",
+        "id",
+        "base",
+        "patch"
+      ]
+    },
+    "WatchError": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "const": false
+        },
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "details": {},
+        "problem": {
+          "$ref": "#/$defs/Problem"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ]
+    },
+    "CommandContract": {
+      "type": "object",
+      "properties": {
+        "arguments": {
+          "type": "string",
+          "minLength": 64,
+          "maxLength": 64,
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "result": {
+          "type": "string",
+          "minLength": 64,
+          "maxLength": 64,
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "errors": {
+          "type": "string",
+          "minLength": 64,
+          "maxLength": 64,
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "arguments",
+        "result",
+        "errors"
+      ],
+      "additionalProperties": false
+    },
+    "PreparedCommandV2": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "const": 2
+        },
+        "database": {
+          "type": "string",
+          "minLength": 1
+        },
+        "module": {
+          "type": "string",
+          "minLength": 1
+        },
+        "method": {
+          "type": "string",
+          "minLength": 1
+        },
+        "args": {},
+        "request_id": {
+          "type": "string",
+          "pattern": "^f1:(?!0000000000000000)[0-9a-f]{16}:(?:0|[1-9][0-9]{0,18}|1[0-7][0-9]{18}|18[0-3][0-9]{17}|184[0-3][0-9]{16}|1844[0-5][0-9]{15}|18446[0-6][0-9]{14}|184467[0-3][0-9]{13}|1844674[0-3][0-9]{12}|184467440[0-6][0-9]{10}|1844674407[0-2][0-9]{9}|18446744073[0-6][0-9]{8}|1844674407370[0-8][0-9]{6}|18446744073709[0-4][0-9]{5}|184467440737095[0-4][0-9]{4}|18446744073709550[0-9]{3}|18446744073709551[0-5][0-9]{2}|1844674407370955160[0-9]{1}|1844674407370955161[0-4]|18446744073709551615):[0-9a-f]{64}$(?![\\s\\S])"
+        },
+        "expected_revision": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 18446744073709551615
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "contract": {
+          "$ref": "#/$defs/CommandContract"
+        }
+      },
+      "required": [
+        "version",
+        "database",
+        "module",
+        "method",
+        "args",
+        "request_id",
+        "contract"
+      ],
+      "additionalProperties": false
+    },
+    "CallPrincipal": {
+      "type": "object",
+      "properties": {
+        "subject": {
+          "type": "string"
+        },
+        "tenant": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "claims": {}
+      },
+      "required": [
+        "subject"
+      ]
+    },
+    "QueryRequest": {
+      "type": "object",
+      "properties": {
+        "db": {
+          "type": "string"
+        },
+        "module": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "args": {},
+        "principal": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CallPrincipal"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "timestamp_ms": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 18446744073709551615
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "credentials": {}
+      },
+      "required": [
+        "db",
+        "module",
+        "name",
+        "args"
+      ]
+    },
+    "MutationRequest": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/QueryRequest"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "idempotency_key": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "expected_revision": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 18446744073709551615
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": []
+        }
+      ]
+    },
+    "WatchRequest": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/QueryRequest"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "deltas": {
+              "type": "boolean"
+            }
+          },
+          "required": []
+        }
+      ]
+    },
+    "TransactionStep": {
+      "type": "object",
+      "properties": {
+        "db": {
+          "type": "string"
+        },
+        "module": {
+          "type": "string"
+        },
+        "method": {
+          "type": "string"
+        },
+        "args": {}
+      },
+      "required": [
+        "db",
+        "module",
+        "method"
+      ]
+    },
+    "TransactionRequest": {
+      "type": "object",
+      "properties": {
+        "steps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TransactionStep"
+          }
+        },
+        "principal": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CallPrincipal"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "timestamp_ms": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 18446744073709551615
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "idempotency_key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "credentials": {}
+      },
+      "required": [
+        "steps"
+      ]
+    },
+    "MutationEnvelope": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/CallEnvelope"
+        },
+        {
+          "required": [
+            "revision",
+            "position"
+          ],
+          "properties": {
+            "revision": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 18446744073709551615
+            },
+            "position": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 18446744073709551615
+            }
+          }
+        }
+      ]
+    }
+  }
+}

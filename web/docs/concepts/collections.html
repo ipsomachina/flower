@@ -1,0 +1,115 @@
+<h1>Collections and indexes</h1>
+<p class="lede">Source records live in collections: typed rows under unique keys. The engine validates every write against the collection's schemas and maintains its indexes and references in the same commit.</p>
+
+<h2 id="values-and-types">Values and typed contracts</h2>
+
+<p>Everything that crosses the guest boundary — arguments, results, stored rows, keys — is a JSON-compatible <code>Value</code>: null, booleans, finite numbers, strings, arrays and objects with unique keys, at most 128 levels deep. In Rust you rarely touch <code>Value</code> directly. Instead you derive <code>FlowerType</code>, which gives a type a schema (used for validation and for module contracts), an encoder and a decoder:</p>
+
+<pre><code class="language-rust" data-include="examples/snippets/src/collections.rs#types"></code></pre>
+
+<p>The rules the derive follows:</p>
+
+<ul>
+  <li><strong>Wire names are field names</strong>, or their <code>camelCase</code> forms when the struct says <code>#[flower(rename_all = "camelCase")]</code>, for clients speaking JavaScript conventions. A raw identifier is plain on the wire (<code>r#type</code> is <code>type</code>), and two fields answering to one wire name are a compile error. There is no per-field rename and no flatten. Named structs decode as <em>closed</em> objects: an unknown member is rejected with <code>INVALID_VALUE</code>.</li>
+  <li><strong><code>Option&lt;T&gt;</code> is a visible null.</strong> In a struct the member must be present; its value may be <code>null</code>. (A method's <code>Option</code> parameter, by contrast, is a member callers may leave out.) To make a member optional, add <code>#[flower(default)]</code> (absent decodes as <code>Default::default()</code>) or <code>#[flower(default = path)]</code>.</li>
+  <li><code>#[flower(skip)]</code> leaves a field out of the schema and the encoding and fills it with <code>Default</code> when decoding.</li>
+  <li><strong>Unit enums</strong> are closed string enums named after the variants. <strong>Single-payload enums</strong> encode as <code>{"tag": "Variant", "value": …}</code>. Tuple structs, unions, mixed enums and multi-field variants are refused.</li>
+  <li><strong>Integers are exact.</strong> <code>i64</code> and <code>u64</code> accept only the safe-integer range, ±(2<sup>53</sup> − 1); wider values fail rather than round. Use <code>typed::DecimalI64</code> / <code>DecimalU64</code> for the full range, carried as decimal strings.</li>
+  <li>Built-in types include <code>()</code>, <code>bool</code>, <code>String</code>, finite <code>f64</code>, the integer types, <code>Option</code>, <code>Vec</code>, <code>Box</code>, tuples of one to four elements, and <code>Value</code> itself for deliberately untyped data.</li>
+</ul>
+
+<p>Codec failures have stable codes: <code>TYPE_MISMATCH</code> (wrong JSON kind), <code>MISSING_FIELD</code>, <code>INVALID_VALUE</code> (right kind, wrong content) and <code>SCHEMA_MISMATCH</code> (rejected by a schema). A method's arguments are checked before your code runs, and a refusal there is <code>INVALID_ARGUMENT</code>, with <code>details.path</code> naming the offending member (<code>["items", 1, "count"]</code>). See <a href="../reference/errors.html">Error codes</a>.</p>
+
+<h2 id="declaring-a-collection">Declaring a collection</h2>
+
+<p>The <code>#[collection]</code> attribute declares a collection on a marker struct, with its key type, row type, indexes and references. The marker is both the typed handle and the component the app lists:</p>
+
+<pre><code class="language-rust" data-include="examples/snippets/src/collections.rs#collections"></code></pre>
+
+<p>For each marker the macro generates:</p>
+
+<table>
+  <thead><tr><th>Item</th><th>What it is</th></tr></thead>
+  <tbody>
+    <tr><td><code>Tasks::NAME</code></td><td>The collection name, <code>"tasks"</code>.</td></tr>
+    <tr><td><code>Tasks::get(ctx, &amp;id)</code></td><td>Read one row by key, decoded: <code>Result&lt;Option&lt;Task&gt;&gt;</code>. Works in any context.</td></tr>
+    <tr><td><code>Tasks::set(ctx, &amp;id, &amp;task)</code></td><td>Encode and upsert. Mutations only.</td></tr>
+    <tr><td><code>Tasks::delete(ctx, &amp;id)</code></td><td>Delete one row. Mutations only.</td></tr>
+    <tr><td><code>Tasks::page(ctx, limit, after)</code></td><td>One page of the whole collection in host order.</td></tr>
+    <tr><td><code>Tasks::SOURCE</code></td><td>A typed <code>Source&lt;K, V&gt;</code> read handle: <code>get</code>, <code>page</code>, and <code>in_module</code> to read another module's exported collection of the same shape.</td></tr>
+    <tr><td><code>Tasks::BY_OWNER_DUE</code></td><td>A typed <code>Index</code> handle, one per index whose name is a valid identifier.</td></tr>
+    <tr><td><code>Tasks::raw()</code></td><td>The raw <code>Collection</code> descriptor, for code that works on descriptors.</td></tr>
+  </tbody>
+</table>
+
+<p>Register the collection by listing the marker among the app's components: <code>App::new(&amp;[&amp;Tasks, ...])</code>. A collection you do not register does not exist. Two more options go in the attribute: <code>export</code> lets the database's other modules read the collection (see <a href="modules.html#exports">exports</a>), and <code>access = policy</code> guards callers' operations on it with an <a href="../guides/auth.html#access-policies">access policy</a>.</p>
+
+<h2 id="keys">Keys</h2>
+
+<p>A key is a value of the collection's key type: a <code>String</code>, a number, or a tuple for a compound key. The handles take it as it is:</p>
+
+<pre><code class="language-rust" data-include="examples/snippets/src/collections.rs#read-write"></code></pre>
+
+<p>On the wire and in storage a key is its canonical JSON rendering — the string key <code>milk</code> is <code>"milk"</code>, the tuple key <code>("acme", 7)</code> is <code>["acme",7]</code> — so every key has exactly one form, and keys of every type order consistently in scans. The SDK renders keys for you; the raw context operations take keys as <code>Value</code>s (anything <code>FlowerType</code> encodes to one) and render them the same way.</p>
+
+<p>Scan and range results hand keys back as decoded values (<code>row.key</code> is a <code>String</code> above), so you never parse key text.</p>
+
+<div class="callout">
+<p><span class="callout-title">Host order</span> Pages come back in the host's storage order: shorter key text first, then by bytes. It is not the order of your Rust type and not lexicographic order — <code>"milk"</code> sorts before <code>"bread"</code>. Never synthesize cursors; continue from the one the host returned.</p>
+</div>
+
+<h2 id="indexes-and-ranges">Indexes and range queries</h2>
+
+<p>An index names one or more fields of the row; the engine maintains its entries atomically with every write. <code>types(...)</code> gives the typed handle the fields' Rust types, so prefixes and bounds are type-checked; without it the components are <code>Value</code>s.</p>
+
+<p>A range fixes a <strong>prefix</strong> of the indexed fields, then optionally bounds the next field from below (<code>gt</code>/<code>gte</code>) and above (<code>lt</code>/<code>lte</code>), and returns a page of at most <code>limit</code> rows with a continuation cursor:</p>
+
+<pre><code class="language-rust" data-include="examples/snippets/src/collections.rs#range"></code></pre>
+
+<ul>
+  <li><code>prefix(())</code> — or <code>Tasks::BY_OWNER_DUE.query()</code> — ranges over the whole index; a prefix covering every field takes no bounds and returns the rows equal to it.</li>
+  <li><code>.reverse()</code> walks the range descending; <code>.after(cursor)</code> continues a previous page. The host checks that a cursor belongs to the range it continues (<code>INVALID_VALUE</code>, "out of scope", otherwise).</li>
+  <li>Bounds compare in the index's stored component order, which for numbers follows the canonical text — another reason to keep numeric index fields within the same magnitude, or to use fixed-width encodings.</li>
+  <li><code>DecimalI64</code> and <code>DecimalU64</code> values order as strings in an index, not as numbers.</li>
+</ul>
+
+<p>To walk a whole collection, page it until the cursor runs out:</p>
+
+<pre><code class="language-rust" data-include="examples/snippets/src/collections.rs#scan"></code></pre>
+
+<div class="callout warning">
+<p><span class="callout-title">Pagination is live</span> Each page is a separate read. Across calls, records changed between pages can be skipped or repeated. Within a single invocation, every page reads the same snapshot.</p>
+</div>
+
+<h2 id="references">References</h2>
+
+<p>A <code>reference</code> declares a foreign key from this collection to another. The engine checks it on every write and acts on it when the target row is deleted:</p>
+
+<table>
+  <thead><tr><th><code>on_delete</code></th><th>Deleting a referenced row…</th></tr></thead>
+  <tbody>
+    <tr><td><code>restrict</code> (default)</td><td>fails while any row still refers to it.</td></tr>
+    <tr><td><code>cascade</code></td><td>deletes the referring rows too, in the same commit.</td></tr>
+    <tr><td><code>set_null</code></td><td>sets the referring fields to null.</td></tr>
+  </tbody>
+</table>
+
+<p>The reference can sit in named fields (<code>fields(project)</code>), in the whole key (<code>key</code>) or in a key prefix (<code>key_prefix</code>). A field reference can be polymorphic: <code>targets(Posts, Comments)</code> with a <code>discriminator</code> field naming which collection each row points to. Targets name the marker structs of collections in scope. Cascading deletes and triggers abort with <code>cascade_too_deep</code> beyond 16 rounds.</p>
+
+<p>A field reference needs an index the engine can use to find the rows that refer to a target: one whose fields start with the reference's fields, as <code>by_project</code> above does for <code>fields(project)</code>. A polymorphic one needs an index over the discriminator followed by the reference's fields. Without one, <code>#[collection]</code> refuses the reference at compile time and names the index to add; a hand-built <code>Collection</code> descriptor is refused at deployment ("field reference without a covering index").</p>
+
+<h2 id="writes">Writes in detail</h2>
+
+<p>Inside a mutation, reads see the mutation's own staged writes. Nothing is visible to anyone else until the mutation returns successfully and the engine commits. Besides <code>set</code> and <code>delete</code>, the mutation context offers:</p>
+
+<ul>
+  <li><code>delete_if_match(collection, &amp;key, &amp;expected)</code> — delete only when the stored row equals <code>expected</code>; returns whether it did.</li>
+  <li><code>delete_permanently(collection, &amp;key)</code> — delete without running <a href="derived.html#triggers-and-retention">retention hooks</a>, for the row and the deletes it cascades into.</li>
+  <li><code>set_clearing(collection, &amp;key, value, &amp;["field"])</code> — upsert and remove named fields. A caller whose <a href="../guides/auth.html#redaction">access policy</a> hides fields from it otherwise keeps their stored values when it writes the row back.</li>
+</ul>
+
+<p>These are raw operations: <code>collection</code> is a <code>CollectionRef</code> (<code>CollectionRef::local(Tasks::NAME)</code>), and keys and rows are <code>Value</code>s (<code>&amp;Value::String(id)</code>, or <code>id.encode()?</code>). Every stored row must validate against the collection's value schema; a typed row can never be <code>null</code>, and a missing row reads as <code>None</code>.</p>
+
+<h2 id="raw-collections">Raw, untyped collections</h2>
+
+<p>The typed layer sits on a raw one you can use directly for deliberately dynamic code. <code>Collection::new("orders").indexes(&amp;[IndexDef::new("by_shop", &amp;["shop"])])</code> declares a collection without schemas — list the static among the app's components like a marker — and the context's <code>get</code>, <code>set</code>, <code>delete</code>, <code>scan</code> and <code>range</code> work on <code>Value</code> keys and rows addressed by <code>CollectionRef::local("orders")</code>. Host enforcement — schemas, references, access rules — is the same whichever layer you use.</p>

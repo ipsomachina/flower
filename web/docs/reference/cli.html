@@ -1,0 +1,323 @@
+<h1>cargo flower</h1>
+<p class="lede">One binary, <code>cargo-flower</code>, builds and inspects guests, deploys and calls them, operates clusters, and serves cluster nodes. Run it as <code>cargo flower &lt;command&gt;</code> or <code>cargo-flower &lt;command&gt;</code>.</p>
+
+<h2 id="conventions">Conventions</h2>
+
+<ul>
+  <li>Install with <code>cargo install --path crates/cargo-flower</code> from a Flower checkout. <code>--help</code> works on every command and subcommand.</li>
+  <li>Commands that talk to a server take <code>--endpoint URL</code> (<code>http://</code> or <code>https://</code>), read from <code>FLOWER_ENDPOINT</code> when absent, and default to <code>http://127.0.0.1:8080</code>. HTTPS trusts the platform's roots. (<code>backup</code> is the exception: it talks to a server only when given an endpoint.)</li>
+  <li>Credentials: operator commands take <code>--admin-token</code> or <code>FLOWER_ADMIN_TOKEN</code>; <code>call</code>, <code>transaction</code> and <code>retry</code> take <code>--token</code> or <code>FLOWER_TOKEN</code> (an end user's token for the module's authorization component, or the admin token as a trusted gateway); <code>queue</code> takes <code>--token</code> or <code>FLOWER_WORKER_TOKEN</code>.</li>
+  <li><strong>Flags of a command come before its subcommand</strong>: <code>cargo flower queue --db app stats --queue mail</code>, not <code>queue stats --db app …</code>.</li>
+  <li>Output is <code>key=value</code> lines or JSON, depending on the command. Errors print <code>cargo-flower: &lt;message&gt;</code> to stderr and exit 1; usage errors exit 2. The CLI does not retry; each request has a 20-second timeout.</li>
+</ul>
+
+<pre><code class="language-bash">export FLOWER_ENDPOINT=https://flower.example.com FLOWER_ADMIN_TOKEN=…
+cargo flower status</code></pre>
+
+<h2 id="build-and-inspect">Building and inspecting</h2>
+
+<h3 id="build">build</h3>
+
+<pre><code class="language-bash">cargo flower build [--package P] [--manifest-path Cargo.toml] [--profile release] \
+  [--features a,b] [--no-default-features] [--locked] [--out-dir .flower]</code></pre>
+
+<p>Builds the workspace's <code>cdylib</code> (exactly one, or the one <code>--package</code> names) for <code>wasm32-unknown-unknown</code>, inspects it through the server's Wasm backend, and writes <code>&lt;package&gt;.wasm</code> and <code>&lt;package&gt;.manifest.json</code>. Prints <code>built &lt;name&gt; wasm=… manifest=… sha256=…</code> and counts of collections, queries, mutations, derived values, transactions, triggers, HTTP names, SQL plans and SQL endpoints.</p>
+
+<h3 id="dev">dev</h3>
+<pre><code class="language-bash">cargo flower dev --package P --db D --module M [--watch .] [--endpoint URL] [--once]</code></pre>
+<p>Watches Rust sources, Cargo manifests and lockfiles beneath the selected Cargo workspace directory, builds with the dev profile and deploys successful builds to a running server. It uses the ordinary deployment preflight and <code>FLOWER_ADMIN_TOKEN</code>. <code>--once</code> performs one build/deploy cycle and returns its status. Otherwise failures wait for a source edit; Ctrl-C stops the watcher. Symlinks and directories named <code>target</code>, <code>.git</code> and <code>.flower</code> are excluded.</p>
+<h3 id="plan">plan</h3>
+
+<pre><code class="language-bash">cargo flower plan --wasm W [--manifest M] [--current DEPLOYED] [--module NAME] \
+  [--with MODULE=FILE]… [--bind SLOT=MODULE]… [--bindings FILE]</code></pre>
+
+<p>Preflights a deployment offline: validates the module and manifest, applies bindings, prints the content <code>identity</code>, diffs against <code>--current</code> (a manifest or Wasm), and with <code>--with</code> runs the cross-module link check. Exits 1 on an incompatible change.</p>
+
+<h3 id="contract">contract</h3>
+
+<pre><code class="language-bash">cargo flower contract inspect --manifest M
+cargo flower contract diff --from OLD --to NEW
+cargo flower contract typescript --manifest M --out contracts.ts</code></pre>
+
+<p><code>inspect</code> prints collections, indexes, references, definitions and triggers. <code>diff</code> marks lines <code>+</code> added, <code>-</code> removed, <code>~</code> changed and <code>!</code> incompatible; it always exits 0.</p>
+<p>Inspection and diff also include named SQL plans and scoped endpoints. <code>typescript</code> generates deterministic <code>Queries</code> and <code>Mutations</code> wire-type maps for public aliases, including argument, result and error contracts. Decimal integers remain strings; optional and nullable fields remain distinct. These static types require server validation for bounds, patterns and authorization.</p>
+<h3 id="sql-explain">sql-explain</h3>
+<pre><code class="language-bash">cargo flower sql-explain --manifest M --plan PLAN</code></pre>
+<p>Explains a named SQL plan offline, including its access path and budgets. For dynamic SQL, call the module's explain query. See <a href="../guides/sql.html">SQL queries</a>.</p>
+
+<h2 id="deploying">Deploying</h2>
+
+<h3 id="deploy">deploy</h3>
+
+<pre><code class="language-bash">cargo flower deploy --db D --module M --wasm W [--manifest M] [--identity HEX] \
+  [--bind SLOT=MODULE]… [--bindings FILE] [--endpoint URL] [--admin-token T]</code></pre>
+
+<p>Runs the <code>plan</code> preflight, then deploys through consensus. Prints <code>revision=… position=…</code>. A slot the module imports (<code>$inventory</code>) must be bound, or nothing is sent.</p>
+
+<h3 id="deployment">deployment</h3>
+
+<pre><code class="language-bash">cargo flower deployment --db D --module M [--endpoint URL] [--admin-token T] &lt;stage|advance|status|activate|cancel|collect&gt;</code></pre>
+
+<table>
+  <thead><tr><th>Subcommand</th><th>Flags</th><th></th></tr></thead>
+  <tbody>
+    <tr><td><code>stage</code></td><td><code>--wasm</code>, <code>--manifest</code> (both required), <code>--identity</code>, <code>--bind</code>, <code>--bindings</code></td><td>Stage without activating.</td></tr>
+    <tr><td><code>advance</code></td><td><code>--max-records N</code> (server default 4096)</td><td>Build more backfill, then derived roots.</td></tr>
+    <tr><td><code>status</code></td><td></td><td>Print the staging.</td></tr>
+    <tr><td><code>activate</code></td><td></td><td>Activate a ready staging.</td></tr>
+    <tr><td><code>cancel</code></td><td></td><td>Abandon it.</td></tr>
+    <tr><td><code>collect</code></td><td><code>--max-keys N</code> (server default 4096)</td><td>Delete structures retired deployments left.</td></tr>
+  </tbody>
+</table>
+
+<h3 id="modules">modules</h3>
+
+<pre><code class="language-bash">cargo flower modules [--db D] [list]
+cargo flower modules --db D remove --module M [--purge]</code></pre>
+
+<p><code>list</code> prints one line per module: its identity, definition count, collections, HTTP names (<code>http=</code>), whether it has an authorization component and any staging. <code>remove</code> takes the module's code, HTTP names, hooks and derived values away and keeps its data; <code>--purge</code> deletes the data too, a page at a time, and the module cannot deploy again until the purge ends.</p>
+
+<h2 id="calling">Calling</h2>
+
+<h3 id="call">call</h3>
+
+<pre><code class="language-bash">cargo flower call --db D --module M --name NAME [--args JSON | --args-file FILE] \
+  [--contract MANIFEST] [--mutation [--request-id ID]] [--token T]</code></pre>
+<p><code>--args-file -</code> reads JSON from standard input. File input and inline <code>--args</code> are mutually exclusive. <code>--contract</code> checks the public alias, requested operation kind and structural argument schema before delivery. Host-only validations and authorization remain server checks.</p>
+
+<p><code>--name</code> is the method's HTTP name: only methods that declare <code>http</code> answer. Add <code>--mutation</code> for a mutation. Without <code>--contract</code>, a kind mismatch is rejected by the server; with a contract, it is rejected locally. Prints the result as JSON; a mutation also prints <code>revision=… position=… duplicate=…</code>. <code>--request-id</code> makes a retry answer the original outcome while the server retains that receipt.</p>
+
+<h3 id="transaction">transaction</h3>
+
+<pre><code class="language-bash">cargo flower transaction --steps '[{"db","module","method","args"}, …]' [--request-id ID] [--token T]</code></pre>
+
+<h3 id="retry">retry</h3>
+
+<pre><code class="language-bash">cargo flower retry --db D [--token T]                       # the retry identity, as JSON
+cargo flower retry --db D id --intent order:42              # an f1: request ID
+cargo flower retry --db D open --module M [--session HEX]   # a retry session
+cargo flower retry --db D session-id --module M --session HEX --sequence 1
+cargo flower retry --db D ack --module M --session HEX --through N [--abandon] [--limit N]
+cargo flower retry --db D status|close --module M --session HEX</code></pre>
+
+<h2 id="queues-and-timers">Queues and timers</h2>
+
+<pre><code class="language-bash">cargo flower queue --db D [--token T] &lt;subcommand&gt; --queue Q …
+cargo flower timer --db D [--admin-token T] &lt;subcommand&gt; …</code></pre>
+
+<table>
+  <thead><tr><th>queue</th><th>Flags</th></tr></thead>
+  <tbody>
+    <tr><td><code>stats</code></td><td><code>--scope</code></td></tr>
+    <tr><td><code>peek</code></td><td><code>--id</code></td></tr>
+    <tr><td><code>poll</code></td><td><code>--limit</code>, <code>--lease-ms</code>, <code>--scope</code>, <code>--owner</code>, <code>--wait-ms</code> (needs <code>--owner</code>)</td></tr>
+    <tr><td><code>heartbeat</code>, <code>complete</code>, <code>fail</code>, <code>kill</code>, <code>release</code></td><td><code>--id</code>, <code>--token</code> (the claim token), and <code>--lease-ms</code> (heartbeat) or <code>--delay-ms</code> (fail, release)</td></tr>
+    <tr><td><code>cancel</code>, <code>retry</code>, <code>purge</code></td><td><code>--id</code>; <code>--id</code> and <code>--delay-ms</code>; <code>--older-than-ms</code></td></tr>
+  </tbody>
+</table>
+
+<p>Timer subcommands: <code>stats</code>, <code>get --id</code>, <code>list [--state pending|dead|held|all] [--limit]</code>, <code>cancel --id</code>, <code>retry --id [--delay-ms]</code>, <code>purge [--older-than-ms]</code>.</p>
+
+<h2 id="operating">Operating</h2>
+
+<table>
+  <thead><tr><th>Command</th><th>What it does</th></tr></thead>
+  <tbody>
+    <tr><td><code>status</code></td><td>Raft state of one member.</td></tr>
+    <tr><td><code>membership [--members ID=RAFTADDR]… [--expected-log-id T-N-I] [--retain]</code></td><td>View, or change to the complete desired voter set.</td></tr>
+    <tr><td><code>leadership --to ID</code></td><td>Hand leadership to another voter (address the leader).</td></tr>
+    <tr><td><code>keys [--db D] [--request-id ID] &lt;subcommand&gt;</code></td><td>A database's managed-key catalog; see <a href="#keys">below</a>.</td></tr>
+    <tr><td><code>retention --db D [rotate|advance|collect|budget]</code></td><td>Retry retention: epoch length and count, receipt collection and byte budget.</td></tr>
+    <tr><td><code>group</code>, <code>partition</code>, <code>transactions</code></td><td>Groups, partition placement and moves, cross-group transactions (see <a href="../guides/operations.html#groups-and-partitions">Operating a cluster</a>).</td></tr>
+    <tr><td><code>backup --endpoint URL [status]</code></td><td>Take a full backup through a member now, or print its backup status.</td></tr>
+    <tr><td><code>backup list</code>, <code>backup restore</code></td><td>Offline: list backups, restore a stopped node; see <a href="#backup">below</a>.</td></tr>
+    <tr><td><code>metrics</code>, <code>raft</code>, <code>activity</code></td><td>Print a member's metrics, Raft metrics and recent activity as JSON.</td></tr>
+  </tbody>
+</table>
+
+<h3 id="keys">keys</h3>
+
+<p>Every database keeps its own replicated key catalog. Without a subcommand (or with <code>list</code>), <code>keys</code> prints every database's catalog, or one with <code>--db</code>; changes need <code>--db</code> (before or after the subcommand, as <code>--request-id</code>) and run at the leader of the database's group under a request ID (printed when you pass none; pass <code>--request-id</code> to retry one safely).</p>
+
+<table>
+  <thead><tr><th>Subcommand</th><th>Flags</th></tr></thead>
+  <tbody>
+    <tr><td><code>generate</code></td><td><code>--name</code>, <code>--algorithm</code> (<code>Ed25519</code>, <code>P256</code>, <code>RSA</code>, <code>HS256</code>, <code>A256GCM</code>, <code>XSalsa20Poly1305</code>, <code>X25519</code>), <code>--bits</code> (RSA)</td></tr>
+    <tr><td><code>seal</code></td><td><code>--key-file</code>, <code>--format raw|pem|der</code>, <code>--wrapping-file</code>, optional <code>--out</code>. Works offline without a database, endpoint or token. Writes a new file or prints the sealed envelope.</td></tr>
+    <tr><td><code>import</code></td><td><code>--name</code>, <code>--algorithm</code>, and either <code>--sealed-file</code> or <code>--key-file</code> with <code>--format raw|pem|der</code> and <code>--wrapping-file</code>. Sealed imports need no wrapping key on the CLI machine.</td></tr>
+    <tr><td><code>bind</code>, <code>unbind</code></td><td><code>--alias</code>, <code>--key</code>, <code>--usages sign,verify,publicKey,encrypt,decrypt,derive</code>; <code>--alias</code></td></tr>
+    <tr><td><code>rotate</code></td><td><code>--name</code>, <code>--bits</code></td></tr>
+    <tr><td><code>retire</code>, <code>revoke</code>, <code>destroy</code></td><td><code>--name</code>, <code>--version</code> (every version without one)</td></tr>
+    <tr><td><code>rewrap</code></td><td><code>--name</code> (every key without one)</td></tr>
+    <tr><td><code>cache</code></td><td>The addressed member's prepared-key cache statistics.</td></tr>
+  </tbody>
+</table>
+
+<pre><code class="language-bash">cargo flower keys --db shop generate --name tickets --algorithm Ed25519
+cargo flower keys --db shop bind --alias tickets --key tickets --usages sign,verify,publicKey</code></pre>
+
+<p>A change sent to a member started without <code>--key-wrapping-file</code> answers 503 <code>KEYS_LOCKED</code> (retry once a member with the key leads): <code>retries exhausted: status 503 KEYS_LOCKED: no wrapping key is mounted</code>. See <a href="../guides/crypto.html#managed-keys">Guest cryptography</a>.</p>
+
+<h3 id="backup">backup list and restore</h3>
+
+<pre><code class="language-bash">cargo flower backup list --backup-url s3://BUCKET/PREFIX --keystore KS --kek-file KEK
+cargo flower backup restore --backup-url s3://BUCKET/PREFIX --keystore KS --kek-file KEK --dir data \
+  [--at-ms MS | --index N [--history H] | --manifest NAME]</code></pre>
+
+<p>Both run offline, against <code>--backup-url</code> (<code>s3://…</code> or <code>file:///…</code>, or <code>FLOWER_BACKUP_URL</code>) or <code>--backup-dir</code>, configured as for <a href="#serve-backup"><code>serve</code></a>. Without a target, <code>restore</code> restores the newest state the backups hold (the latest base, then the archive after it); <code>--manifest</code> restores one backup as it was taken. <code>restore</code> replaces a stopped node's group file and removes its Raft log; start the node with <code>--bootstrap</code> afterwards. For an existing cluster, stop every member and restore the same target on each. See <a href="../guides/backups.html#restore">Backups</a>.</p>
+
+<h2 id="serve">serve</h2>
+
+<p>Serves a cluster node: Raft plus the HTTP API. Only <code>--dir</code> and <code>--id</code> are required. Most flags also read an environment variable, shown in the tables; restarting with the same flags is always safe.</p>
+
+<pre><code class="language-bash">cargo flower serve --dir data --id 1 --bootstrap 1 --admin-token secret</code></pre>
+
+<div class="callout warning">
+<p><span class="callout-title">Upgrades across a compatibility contract</span> A member's files record the storage contract they were written under (how entries apply, how snapshots and values encode). A build whose contract differs refuses to open them at start (<code>incompatible_store</code>), naming both, and refuses peers of another contract. There is no in-place migration: across a contract change, take a backup, then restore it into a fresh directory under the new build. Builds that keep the contract roll one member at a time.</p>
+</div>
+
+<h3 id="serve-node">Node, listeners and TLS</h3>
+
+<table>
+  <thead><tr><th>Flag</th><th>Default</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td><code>--dir</code></td><td>required</td><td>Data directory (created if missing).</td></tr>
+    <tr><td><code>--id</code></td><td>required</td><td>Member ID.</td></tr>
+    <tr><td><code>--http</code></td><td><code>127.0.0.1:8080</code></td><td>API address; port 0 picks one and prints it (<code>listening http=…</code>).</td></tr>
+    <tr><td><code>--raft</code></td><td><code>127.0.0.1:9000</code></td><td>Raft address.</td></tr>
+    <tr><td><code>--bootstrap ID[=RAFTADDR]</code></td><td></td><td>Found a new cluster with these members (repeatable; ignored once initialized).</td></tr>
+    <tr><td><code>--advertise-http</code> · <code>FLOWER_ADVERTISE_HTTP</code></td><td>listen address</td><td>URL clients reach this member at.</td></tr>
+    <tr><td><code>--listen-fd</code> · <code>FLOWER_LISTEN_FD</code></td><td></td><td>Serve on a socket inherited from a supervisor.</td></tr>
+    <tr><td><code>--tls-cert</code>, <code>--tls-key</code> · <code>FLOWER_TLS_CERT_FILE</code>, <code>FLOWER_TLS_KEY_FILE</code></td><td></td><td>API TLS (PEM).</td></tr>
+    <tr><td><code>--tls-handshake-timeout-ms</code></td><td>10000</td><td>TLS handshake deadline.</td></tr>
+    <tr><td><code>--http2-max-streams</code></td><td>hyper's</td><td>Concurrent HTTP/2 streams per connection.</td></tr>
+    <tr><td><code>--admin-ui</code> · <code>FLOWER_ADMIN_UI</code></td><td><code>true</code></td><td>Serve the dashboard at <code>/admin</code>.</td></tr>
+    <tr><td><code>--shutdown-timeout-ms</code></td><td>30000</td><td>Drain time for in-flight requests on shutdown.</td></tr>
+  </tbody>
+</table>
+
+<h3 id="serve-credentials">Credentials</h3>
+
+<table>
+  <thead><tr><th>Flag</th><th>Environment</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td><code>--admin-token</code></td><td><code>FLOWER_ADMIN_TOKEN</code></td><td>Operator endpoints, and trusted gateways that may assert principals and timestamps.</td></tr>
+    <tr><td><code>--worker-token</code></td><td><code>FLOWER_WORKER_TOKEN</code></td><td>Queue endpoints.</td></tr>
+    <tr><td><code>--sync-token</code></td><td><code>FLOWER_SYNC_TOKEN</code></td><td>Replica sync.</td></tr>
+    <tr><td><code>--peer-token</code></td><td><code>FLOWER_PEER_TOKEN</code></td><td>Raft between members; defaults to the admin token; required off loopback.</td></tr>
+    <tr><td><code>--raft-tls-cert</code>, <code>--raft-tls-key</code>, <code>--raft-tls-ca</code></td><td><code>FLOWER_RAFT_TLS_*_FILE</code></td><td>TLS between members (all three, on every member).</td></tr>
+  </tbody>
+</table>
+
+<h3 id="serve-guests">Guest limits and caches</h3>
+
+<table>
+  <thead><tr><th>Flag</th><th>Default</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td><code>--guest-timeout-ms</code></td><td>5000</td><td>Deadline of a call whose method declares no <code>timeout</code>, nested calls included. Wall-clock only: the instruction budget follows the declaration, the same on every member.</td></tr>
+    <tr><td><code>--guest-max-timeout-ms</code></td><td>60000</td><td>The longest deadline a method may declare; longer declarations run to this.</td></tr>
+    <tr><td><code>--guest-memory-bytes</code></td><td>128 MiB</td><td>Linear memory per instance.</td></tr>
+    <tr><td><code>--guest-invocation-memory-bytes</code></td><td>1 GiB</td><td>Memory across an invocation's nested instances.</td></tr>
+    <tr><td><code>--guest-table-elements</code></td><td>65536</td><td>Table elements per instance.</td></tr>
+    <tr><td><code>--max-transaction-bytes</code></td><td>32 MiB</td><td>Largest encoded effects one mutation or transaction may commit; larger ones fail <code>transaction_too_large</code> (413) before anything is proposed. Four times it must fit <code>--raft-max-frame-bytes</code>, here and on every peer.</td></tr>
+    <tr><td><code>--deploy-max-bytes</code></td><td>64 MiB</td><td>Largest deployment request.</td></tr>
+    <tr><td><code>--wasm-pool-slots</code></td><td>1000</td><td>Live guest instances, process-wide.</td></tr>
+    <tr><td><code>--wasm-keep-resident-bytes</code></td><td>1 MiB</td><td>Guest memory a released slot keeps resident (Linux 6.7+).</td></tr>
+    <tr><td><code>--image-cache-bytes</code>, <code>--code-cache-bytes</code></td><td>512 MiB, 64 MiB</td><td>Compiled module caches.</td></tr>
+    <tr><td><code>--query-cache-bytes</code>, <code>--query-flight-bytes</code></td><td>16 MiB, 512 KiB</td><td>Query result cache; joining identical queries in flight. 0 disables.</td></tr>
+    <tr><td><code>--decision-memo-bytes</code></td><td>4 MiB</td><td>Authorization decision memo. 0 runs the hook on every call.</td></tr>
+  </tbody>
+</table>
+
+<p>Each reads <code>FLOWER_</code> plus the flag name in upper case (<code>FLOWER_GUEST_TIMEOUT_MS</code>, <code>FLOWER_MAX_TRANSACTION_BYTES</code>, …).</p>
+
+<h3 id="serve-admission">Admission and writer</h3>
+
+<table>
+  <thead><tr><th>Flag</th><th>Default</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td><code>--query-workers</code></td><td>CPU count</td><td>Concurrent query and watch evaluations.</td></tr>
+    <tr><td><code>--control-workers</code></td><td>1</td><td>Concurrent deployments.</td></tr>
+    <tr><td><code>--queued-input-bytes</code></td><td>64 MiB</td><td>Request bytes queued or running.</td></tr>
+    <tr><td><code>--admission-max-wait-ms</code></td><td>10000</td><td>Longest admission wait.</td></tr>
+    <tr><td><code>--admission-target-ms</code>, <code>--admission-interval-ms</code></td><td>50, 500</td><td>Early shedding of requests with deadlines.</td></tr>
+    <tr><td><code>--admission-refresh-share-percent</code></td><td>25</td><td>Watch refreshes' minimum share while queries wait.</td></tr>
+    <tr><td><code>--evaluation-memory-bytes</code></td><td>256 MiB</td><td>Memory reserved per running evaluation.</td></tr>
+    <tr><td><code>--writer-preparation-workers</code></td><td>min(CPUs, 8)</td><td>Threads preparing mutations speculatively.</td></tr>
+    <tr><td><code>--writer-conflict-prediction</code></td><td>1</td><td>Run methods whose speculation keeps conflicting in turn.</td></tr>
+  </tbody>
+</table>
+
+<h3 id="serve-raft">Raft timing and transport</h3>
+
+<table>
+  <thead><tr><th>Flag</th><th>Default</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td><code>--raft-rtt-ms</code></td><td>0</td><td>Round trip between the farthest members; the rest derive from it.</td></tr>
+    <tr><td><code>--raft-heartbeat-ms</code></td><td>50</td><td>Heartbeat interval.</td></tr>
+    <tr><td><code>--raft-leader-lease-ms</code></td><td>300</td><td>Leader lease.</td></tr>
+    <tr><td><code>--raft-election-min-ms</code>, <code>--raft-election-max-ms</code></td><td>100, 200</td><td>Election timeout range, past the lease.</td></tr>
+    <tr><td><code>--raft-read-lease-ms</code></td><td>270</td><td>Read lease; 0 makes every linearizable read take a quorum round.</td></tr>
+    <tr><td><code>--raft-rpc-timeout-ms</code></td><td>500</td><td>Append and quorum-read deadline.</td></tr>
+    <tr><td><code>--raft-max-frame-bytes</code></td><td>256 MiB</td><td>Largest Raft frame. A member whose frames cannot carry a peer's largest entry refuses that peer's dial.</td></tr>
+    <tr><td><code>--raft-max-connections</code></td><td>512</td><td>Inbound peer connections.</td></tr>
+  </tbody>
+</table>
+
+<h3 id="serve-storage">Storage, snapshots and compaction</h3>
+
+<table>
+  <thead><tr><th>Flag</th><th>Default</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td><code>--fsync</code></td><td><code>on</code></td><td><code>off</code> survives process crashes, not power loss.</td></tr>
+    <tr><td><code>--leader-flush</code></td><td><code>lazy</code></td><td>With ≥3 voters, the leader defers its own flush while followers form a majority.</td></tr>
+    <tr><td><code>--apply-flush-ms</code></td><td>1000</td><td>How often applied state is flushed; 0 = every entry.</td></tr>
+    <tr><td><code>--raft-snapshot-logs</code>, <code>--raft-keep-logs</code></td><td>10000, 10000</td><td>Snapshot every N entries; entries kept after a snapshot.</td></tr>
+    <tr><td><code>--snapshot-after-bytes</code>, <code>--snapshot-max-age-ms</code></td><td>16 MiB, 300000</td><td>Extra snapshot triggers.</td></tr>
+    <tr><td><code>--compact-ratio</code></td><td>2</td><td>Compact a data file online at this waste ratio; 0 = never.</td></tr>
+  </tbody>
+</table>
+
+<h3 id="serve-keys">Managed keys</h3>
+
+<table>
+  <thead><tr><th>Flag</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td><code>--key-wrapping-file</code> · <code>FLOWER_KEY_WRAPPING_FILE</code> (<code>FLOWER_KEYRING_FILE</code>, its earlier name, is still read)</td><td>32 raw bytes of the wrapping key that seals every database's key catalog; every member of every group mounts the same one. Without it the member applies catalogs but serves no catalog key: guests still hash, draw random bytes and verify with keys they hold, but managed-key operations answer <code>KEYS_LOCKED</code>.</td></tr>
+    <tr><td><code>--key-wrapping-previous</code></td><td>Earlier wrapping keys, during rotation (until <code>keys rewrap</code>). Repeatable.</td></tr>
+    <tr><td><code>--key-cache-bytes</code>, <code>--key-cache-ttl-ms</code></td><td>Prepared-key cache budget (16 MiB) and lifetime (0: never expires).</td></tr>
+  </tbody>
+</table>
+
+<h3 id="serve-backup">Backup</h3>
+
+<table>
+  <thead><tr><th>Flag</th><th>Default</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td><code>--backup-url</code> · <code>FLOWER_BACKUP_URL</code></td><td></td><td>Where backups go: <code>s3://BUCKET/PREFIX</code> or <code>file:///PATH</code>. Turns on continuous backup; give every member the same one.</td></tr>
+    <tr><td><code>--backup-dir</code> · <code>FLOWER_BACKUP_DIR</code></td><td></td><td>A local directory instead of <code>--backup-url</code>.</td></tr>
+    <tr><td><code>--keystore</code>, <code>--kek-file</code> · <code>FLOWER_BACKUP_KEYSTORE</code>, <code>FLOWER_BACKUP_KEK_FILE</code></td><td></td><td>The backup keystore and its 32-byte key-encryption key; required with either destination.</td></tr>
+    <tr><td><code>--backup-retention-ms</code></td><td>30 days</td><td>How far back restores reach: every point of this window stays restorable, and older bases thin to one per <code>--backup-base-ms</code>.</td></tr>
+    <tr><td><code>--backup-base-ms</code>, <code>--backup-base-bytes</code></td><td>24 h, 64 MiB</td><td>When the leader takes a new base: once the newest is this old, or the archive since it outgrows both this and the base.</td></tr>
+    <tr><td><code>--backup-archive-ms</code></td><td>1000</td><td>How often the leader archives applied entries.</td></tr>
+    <tr><td><code>--backup-part-bytes</code></td><td>16 MiB</td><td>Multipart upload part size (at least 5 MiB).</td></tr>
+    <tr><td><code>--backup-retention-interval-ms</code></td><td>1 h</td><td>How often the leader applies retention.</td></tr>
+    <tr><td><code>--backup-hold-max-entries</code>, <code>--backup-hold-max-bytes</code></td><td>0, 1 GiB</td><td>Purged log a member keeps for an archive that cannot keep up (0: no bound).</td></tr>
+  </tbody>
+</table>
+
+<p>S3 reads its region, endpoint, addressing (<code>path</code> or <code>virtual</code>) and credentials from <code>FLOWER_BACKUP_S3_REGION</code>, <code>FLOWER_BACKUP_S3_ENDPOINT</code>, <code>FLOWER_BACKUP_S3_ADDRESSING</code>, <code>FLOWER_BACKUP_S3_ACCESS_KEY_ID</code>, <code>FLOWER_BACKUP_S3_SECRET_ACCESS_KEY</code> and <code>FLOWER_BACKUP_S3_SESSION_TOKEN</code>, else from their <code>AWS_</code> names, else from AWS's credential chain. See <a href="../guides/backups.html#configure">Backups</a>.</p>
+
+<h3 id="serve-maintenance">Maintenance</h3>
+
+<table>
+  <thead><tr><th>Flag</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td><code>--timer-sweep-ms</code></td><td>Maintenance tick for timers, tasks and receipt collection (1000).</td></tr>
+    <tr><td><code>--retry-window-ms</code> · <code>FLOWER_RETRY_WINDOW_MS</code></td><td>Default retry window for databases (24 h; 0 = none).</td></tr>
+    <tr><td><code>--partition-freeze-max-ms</code></td><td>Longest a partition move may freeze its partition (30000).</td></tr>
+    <tr><td><code>--leader-placement on|off</code></td><td>Reconcile preferred group leaders (on); <code>FLOWER_LEADER_PLACEMENT</code>.</td></tr>
+  </tbody>
+</table>
+
+<p>OpenTelemetry is configured by environment only: <code>FLOWER_OTEL_ENABLED=1</code> and the standard <code>OTEL_*</code> variables. Logging follows <code>RUST_LOG</code>.</p>

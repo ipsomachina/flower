@@ -1,0 +1,135 @@
+<h1>Queries and mutations</h1>
+<p class="lede">Methods are plain synchronous Rust functions. Queries read one snapshot; mutations read and write, and commit atomically. Each is declared once, with everything about it — its name, whether clients may call it over HTTP, who may call it, its consistency and its deadline — and an <code>App</code> lists them.</p>
+
+<h2 id="queries">Queries</h2>
+
+<p><code>#[query]</code> adapts a function whose first parameter is <code>ctx: &amp;mut QueryCtx&lt;'_, '_&gt;</code>. The remaining parameters become the fields of the method's JSON arguments object, and the return type becomes its result contract:</p>
+
+<pre><code class="language-rust" data-include="examples/snippets/src/methods.rs#query"></code></pre>
+
+<p>The macro keeps your function as it is — you can still call <code>balance(ctx, account)</code> from Rust — and adds two items:</p>
+
+<ul>
+  <li>a public argument struct named after the function (<code>BalanceArgs</code>, one field per parameter after <code>ctx</code>), which derives <code>FlowerType</code>: callers in Rust build it instead of writing JSON;</li>
+  <li>a static named after the function in upper case (<code>BALANCE</code>), an <code>Op&lt;BalanceArgs, Option&lt;u64&gt;, Failure&gt;</code>. It is the component the app lists, and it carries the method's name, kind, argument, result and error types, so <a href="queues-timers.html#timers">timers</a>, <a href="../guides/testing.html">tests</a> and the <a href="../guides/rust-client.html#typed-calls">Rust client</a> call it type-checked.</li>
+</ul>
+
+<p>Arguments are checked against the struct's schema before your code runs; arguments that do not match fail with <code>INVALID_ARGUMENT</code>, whose <code>details.path</code> names the offending member. A parameter of type <code>Option&lt;T&gt;</code> is an optional member that callers may leave out. Methods must be synchronous, non-generic and free of <code>self</code>.</p>
+
+<p><code>BALANCE_NEARBY</code> shows the other way to declare an operation: <code>.named(..)</code> on an existing static makes a twin of the same callback under another name, here with another <a href="consistency.html">consistency</a>. Definition names are unique within a module, so a twin is how one read is served two ways.</p>
+
+<p>A query sees one consistent snapshot of its database. It can read collections, indexes and derived values, read the clock, learn its caller, and call other modules' exported queries. It cannot write. Query results are cached and shared: an identical query (same method, arguments and caller) at an unchanged revision is answered from a result cache, and identical queries in flight at the same time are joined into one evaluation.</p>
+
+<h2 id="mutations">Mutations</h2>
+
+<p><code>#[mutation]</code> works the same way with a <code>MutationCtx</code>. A mutation can do everything a query can, plus write the module's own collections, call other modules' exported mutations, enqueue jobs, schedule timers and draw random bytes. Everything it does is staged; when it returns <code>Ok</code>, the engine validates the staged writes, applies their consequences (indexes, references, triggers, derived values) and commits the lot as one log entry. When it returns <code>Err</code>, or traps, or exceeds a budget, nothing it wrote is kept.</p>
+
+<p>Mutations run on the group's leader, which prepares several at a time speculatively and commits them in order. A mutation whose reads were invalidated by an earlier one in the same batch is prepared again; you never see that, except as latency. Write mutations as if each one ran alone.</p>
+
+<div class="callout">
+<p><span class="callout-title">Determinism is not required</span> Followers do not re-run your code: they apply the writes the leader's run produced. Reading the clock or drawing random bytes in a mutation is fine — the outcome is decided once, on the leader.</p>
+</div>
+
+<h2 id="options">Options</h2>
+
+<p>Everything about an operation goes in its attribute, for queries and mutations alike: <code>#[query(http, timeout = "500ms")]</code>. All options are optional:</p>
+
+<table>
+  <thead><tr><th>Option</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td><code>name = "accounts.balance"</code></td><td>The definition's name, which is also its HTTP name. Default: the function's name.</td></tr>
+    <tr><td><code>http</code></td><td>Callers may reach it over HTTP under its name. <strong>Without it, no client can call it over HTTP</strong>: timer and queue handlers, trigger targets and methods written for other modules need no exposure, and none is ever public by accident.</td></tr>
+    <tr><td><code>consistency = replica_local</code>, <code>max_staleness_ms = 2000</code></td><td>Queries only: how fresh a read must be. Linearizable by default. See <a href="consistency.html">Revisions and consistency</a>.</td></tr>
+    <tr><td><code>access = public</code>, <code>authenticated</code> or a check function's path</td><td>Who may call it, decided by the module's <a href="../guides/auth.html">authorization component</a>. Default: the component's <code>default</code>.</td></tr>
+    <tr><td><code>export</code>, <code>callers("shop", ...)</code></td><td>Other modules of the database may call it: all of them, or only those named. Private by default. See <a href="modules.html">Modules and interfaces</a>.</td></tr>
+    <tr><td><code>timeout = "500ms"</code></td><td>The method's own deadline (<code>ms</code>, <code>s</code> or <code>m</code>). Default: the operator's default, 5 s. See <a href="#deadlines">Deadlines and limits</a>.</td></tr>
+    <tr><td><code>rename_all = "camelCase"</code></td><td>The argument members' wire names in <code>camelCase</code> (<code>lifetimeSeconds</code> for <code>lifetime_seconds</code>), for clients speaking JavaScript conventions.</td></tr>
+    <tr><td><code>bare_arg</code></td><td>The only parameter after <code>ctx</code> is the whole argument (a string, a tuple, a struct) rather than one member of an arguments object.</td></tr>
+  </tbody>
+</table>
+
+<p>Raw descriptors take the same options as builder methods — <code>Method::query(name, callback).http().access(..).export().timeout_ms(500)</code> — for code the attributes cannot express.</p>
+
+<h2 id="declared-errors">Declared errors</h2>
+
+<p>A method that can fail returns <code>Result&lt;T, E&gt;</code> where <code>E</code> is either the SDK's <code>Failure</code> (via the <code>flower_sdk::Result&lt;T&gt;</code> alias, as in the quickstart) or an enum deriving <code>FlowerError</code>. Every variant names a stable <code>code</code>; a single payload travels as the failure's <code>details</code>:</p>
+
+<pre><code class="language-rust" data-include="examples/snippets/src/methods.rs#errors"></code></pre>
+
+<p>Over HTTP, a method's own failure answers <strong>422</strong>, for queries and mutations alike, with <code>"ok":false</code>, the code, the variant's message (its name when it sets none) and the payload as <code>details</code>. A mutation's answer also carries the revision and log position its failed outcome was recorded at:</p>
+
+<pre><code class="language-http">HTTP/1.1 422 Unprocessable Entity
+
+{"ok":false,"revision":0,"position":12,"code":"ACCOUNT_NOT_FOUND","message":"no account has this ID","details":"a","duplicate":false}</code></pre>
+
+<p>Arguments the method's schema refuses never reach your code. They answer 422 too, with the path of the member at fault:</p>
+
+<pre><code class="language-json">{"code":"INVALID_ARGUMENT","details":{"path":["account"]},"message":"arguments for `balance` invalid at $.account: expected string","ok":false}</code></pre>
+
+<p>Things to know about errors:</p>
+
+<ul>
+  <li>Codes are <code>UPPER_SNAKE_CASE</code>; the derive refuses anything else at compile time. Flower's own codes for its own failures are lowercase (<code>deadline_exceeded</code>, <code>overloaded</code>), so the two never collide.</li>
+  <li>One variant may be <code>#[flower(other)]</code> over <code>Failure</code>: it takes every failure that is not one of yours (a codec, the host), so <code>?</code> works on SDK calls through the generated <code>From&lt;Failure&gt;</code>. Without one, convert with <code>map_err</code>.</li>
+  <li><code>#[flower(retryable)]</code> marks a variant safe to retry and feeds the generated <code>is_retryable()</code> helper, which clients decoding the error can use.</li>
+  <li>The error type is part of the method's contract: other modules importing it, and Rust clients calling it through its descriptor, decode exactly these codes. See <a href="../guides/errors-retries.html">Errors and retries in clients</a>.</li>
+  <li>Infrastructure failures — storage errors, overload, an unknown method — have their own codes and statuses and are never confused with yours; see <a href="../reference/errors.html">Error codes and limits</a>.</li>
+</ul>
+
+<h2 id="the-app">The <code>App</code> assembly</h2>
+
+<p>Nothing is discovered automatically. A module is exactly what its <code>App</code> static lists, in one flat list of components:</p>
+
+<pre><code class="language-rust" data-include="examples/snippets/src/methods.rs#app"></code></pre>
+
+<table>
+  <thead><tr><th>Component</th><th>Listed as</th></tr></thead>
+  <tbody>
+    <tr><td>Queries, mutations and derived values</td><td>The statics their attributes declare (<code>&amp;BALANCE</code>), twins (<code>&amp;BALANCE_NEARBY</code>) and raw <code>Method</code>s.</td></tr>
+    <tr><td>Collections</td><td>The <code>#[collection]</code> marker itself (<code>&amp;Accounts</code>).</td></tr>
+    <tr><td><a href="derived.html">Aggregates, triggers, maintenance tasks, retention hooks</a></td><td>Their <code>Derived</code>, <code>Trigger</code>, <code>Task</code> and <code>Retention</code> statics.</td></tr>
+    <tr><td><a href="queues-timers.html">Queues</a></td><td>A <code>TypedQueue</code> static: it declares a queue the module uses.</td></tr>
+    <tr><td><a href="../guides/auth.html">The authorization component</a></td><td>An <code>Authorization</code> static, at most one per module.</td></tr>
+    <tr><td><a href="../guides/crypto.html#managed-keys">Managed keys</a></td><td>Each <code>KeyDeclaration</code>.</td></tr>
+    <tr><td><a href="modules.html">Imports and interface providers</a></td><td>An interface handle (<code>InventoryApi::import("$inventory")</code>), a provider's <code>COMPONENT</code>, an <code>external!</code> value.</td></tr>
+    <tr><td>Groups</td><td>A static array of components, to share one list between apps.</td></tr>
+  </tbody>
+</table>
+
+<p>The manifest — definitions, HTTP names, exports, per-method access, queues and keys — is generated from these declarations. <code>App::new(..).init(f)</code> adds an optional <code>fn() -&gt; Result&lt;()&gt;</code> run once when the server prepares the module's image, with no context; its memory and statics become the starting point of every call. Then end the crate with <code>flower_sdk::export!(APP);</code>.</p>
+
+<div class="callout warning">
+<p><span class="callout-title">Statics are configuration, not state</span> Every call starts from the module's initialized image: changes a call makes to statics or the heap are gone when it returns. Keep state in collections.</p>
+</div>
+
+<h2 id="calling-other-modules">Calling other modules</h2>
+
+<p>A method can call another module's exported methods in the same database. The call runs in the same transaction and snapshot, with the callee's module identity; the callee sees your module as its <code>caller</code>.</p>
+
+<pre><code class="language-rust" data-include="examples/snippets/src/methods.rs#calls"></code></pre>
+
+<ul>
+  <li><code>call</code> (queries) and <code>call_mutation</code> (mutations) are ordinary calls: if the callee fails, your whole invocation fails, <em>even if you handle the <code>Err</code></em>. The engine poisons the invocation so a half-done callee can never commit.</li>
+  <li><code>try_call</code> and <code>try_mutation</code> run the callee under a <strong>savepoint</strong>. A recoverable failure rolls back only the callee's writes and comes back as <code>CallOutcome::Failure</code>; <code>typed::decode_outcome</code> turns it into your declared error type. Exhausted budgets and other fatal failures still fail the invocation, as <code>CallError::Host</code>.</li>
+  <li><code>typed::call_typed</code> encodes typed arguments and decodes the result of an ordinary call.</li>
+  <li>An unknown method, a non-exported one (<code>MODULE_PRIVATE</code>) or invalid arguments are deterministic and have no effects, so they recover even without a savepoint.</li>
+</ul>
+
+<p>For calls between separately built modules, an <a href="modules.html#interface-crates">interface crate</a> gives both sides typed handles generated from one trait.</p>
+
+<h2 id="who-is-calling">Who is calling</h2>
+
+<p>Query and mutation contexts implement <code>MethodCtx</code>, which adds two reads:</p>
+
+<ul>
+  <li><code>ctx.principal()</code> — the <code>Principal</code> the call runs as (<code>subject</code>, optional <code>tenant</code>, optional <code>claims</code>), or <code>None</code> for an anonymous call. It is decided by the module's <a href="../guides/auth.html">authorization hook</a>.</li>
+  <li><code>ctx.caller()</code> — the calling module's name for a nested call, or <code>None</code> when the call came from outside.</li>
+</ul>
+
+<h2 id="deadlines">Deadlines and limits</h2>
+
+<p>A method's budget is a deadline, stated where it is meant. Each call runs under the method's own <code>timeout</code> — or the operator's default, 5 seconds — capped by the operator's ceiling (60 seconds by default). A caller can only shorten it, by sending <code>x-flower-timeout-ms</code> (the Rust client always does). Everything the call nests shares that one deadline.</p>
+
+<p>The engine derives the call's internal instruction and host-operation budget from the method's declaration (or a fixed default) alone, so whether a call fits does not depend on which member runs it or how that member is configured. Running out fails the call with <code>deadline_exceeded</code> (or <code>budget_exhausted</code> for the derived budget): the call's own failure, answered 422, which retrying will not fix — declare a longer <code>timeout</code> or do less per call. When the <em>caller's</em> shorter deadline passes first, the answer is <code>caller_deadline_exceeded</code>, 503, which an attempt with more time may get past.</p>
+
+<p>The other limits are fixed: 128 MiB of memory per instance and 1 GiB across the call, and 32 levels of nesting (<code>out_of_memory</code>, <code>stack_overflow</code>, <code>nesting_too_deep</code>). None of these failures can be caught with a savepoint. See <a href="../reference/errors.html#limits">limits</a>.</p>

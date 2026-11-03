@@ -1,0 +1,101 @@
+<h1>Worker queues</h1>
+<p class="lede"><code>flower-worker</code> runs queue workers in your own Rust processes: it claims jobs, runs your handler, renews leases while it works, reports outcomes, adapts its concurrency to load, and drains cleanly when told to stop.</p>
+
+<p>Jobs come from guest mutations, into queues their modules declare (see <a href="../concepts/queues-timers.html">Queues and timers</a>). This guide is about the other end. A native worker may name any queue of the database; it claims, renews and reports, but never enqueues.</p>
+
+<h2 id="setup">Setup</h2>
+
+<figure class="code">
+<figcaption>Cargo.toml</figcaption>
+<pre><code class="language-toml">[dependencies]
+flower-client = { path = "../flower/crates/flower-client" }
+flower-worker = { path = "../flower/crates/flower-worker" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal"] }</code></pre>
+</figure>
+
+<p>Queue endpoints need the server's <strong>worker token</strong> (<code>serve --worker-token</code> / <code>FLOWER_WORKER_TOKEN</code>) or the admin token. Give workers the worker token: it can claim and report jobs and nothing else.</p>
+
+<h2 id="a-worker">A worker</h2>
+
+<pre><code class="language-rust" data-include="examples/client/src/lib.rs#worker"></code></pre>
+
+<p>The handler gets a <code>Claim</code> — <code>payload</code>, <code>attempts</code> (this claim included), the <code>fence</code> token, the job's <code>scope</code>, <code>priority</code>, <code>name</code> and <code>group</code> — and returns:</p>
+
+<table>
+  <thead><tr><th>Handler returns</th><th>Report</th><th>Effect</th></tr></thead>
+  <tbody>
+    <tr><td><code>Ok(())</code></td><td>complete</td><td>The job is done and deleted.</td></tr>
+    <tr><td><code>Err(WorkError::Retry(Some(delay)))</code></td><td>fail</td><td>Pending again after <code>delay</code>, or dead once its attempts are spent.</td></tr>
+    <tr><td><code>Err(WorkError::Retry(None))</code></td><td>fail</td><td>As above, after the default backoff: 2 s after the first attempt, doubling, capped at 60 s (<code>.retry(base, max)</code>).</td></tr>
+    <tr><td><code>Err(WorkError::Terminal(reason))</code></td><td>kill</td><td>Dead now, whatever attempts remain. The reason stays in your process.</td></tr>
+    <tr><td>a panic</td><td>fail</td><td>As <code>Retry(None)</code>.</td></tr>
+  </tbody>
+</table>
+
+<p><code>run_queue_worker</code> returns a <code>WorkerSummary</code> counting <code>completed</code>, <code>failed</code>, <code>killed</code>, <code>lost</code> (lease lapsed or report refused) and <code>drained</code> jobs. Jobs completed by the worker are deleted; to keep a result with a job, report it yourself with <code>client.complete_queue_with(…)</code>, or let a guest mutation complete the claim.</p>
+
+<div class="callout warning">
+<p><span class="callout-title">At least once</span> A job whose lease lapses — the worker crashed, stalled or lost the network — is delivered again. Make handlers idempotent, or pass <code>claim.fence</code> to the downstream system and have it refuse writes carrying an older fence than one it has seen.</p>
+</div>
+
+<h2 id="leases">Leases</h2>
+
+<p>Each claim holds a lease (<code>.lease(…)</code>, 30 seconds by default, at most an hour). The worker renews it every third of the lease while your handler runs. If a renewal is refused — the job was settled or taken over elsewhere — or none lands before the lease would end, the worker drops your handler's future and counts the job <code>lost</code>; it will be delivered again. Choose a lease comfortably longer than a renewal round trip, not longer than the time you are willing to wait for a crashed worker's jobs to come back.</p>
+
+<h2 id="concurrency">Concurrency and backpressure</h2>
+
+<ul>
+  <li><code>.concurrency(n)</code> runs at most <code>n</code> handlers (4 by default).</li>
+  <li><code>.adaptive(min, initial, max)</code> adjusts the limit: it grows while work keeps coming and the process is healthy, and cuts back when the process is busy (Tokio runtime saturation, memory on Linux) or Flower sheds load. Supply your own load signal with <code>.health(…)</code>, and observe changes with <code>.on_event(…)</code>.</li>
+  <li>Whenever the server refuses work for load (<code>503 overloaded</code>), the worker pauses claiming for a second and halves an adaptive limit.</li>
+  <li>The worker claims only what it can start now. Once claims come back full, up to <code>.claimers(n)</code> (4) claims run in parallel; a short claim falls back to one per <code>.poll_interval(…)</code> (1 s).</li>
+</ul>
+
+<h2 id="lines-and-chains">Lines and chained claims</h2>
+
+<p>Polling an empty queue wastes requests and adds latency. Two options remove most of it:</p>
+
+<ul>
+  <li><code>.wait(d)</code> joins the scope's <strong>line</strong>. A claim that comes back short keeps the worker's place; the worker then reads readiness (a cheap query that wakes when work arrives) instead of claiming, and the first worker in line gets new work to itself for the queue's turn (one second by default; the declaring module sets it with <code>TypedQueue::new("mail").turn_ms(..)</code>). One process wakes per job instead of all of them. Stopping gives the place up.</li>
+  <li><code>.chain()</code> makes every report also claim the next jobs, in the same commit: one round trip per job instead of two.</li>
+</ul>
+
+<h2 id="job-control">Idle jobs and throttling</h2>
+
+<p><code>run_queue_worker_with</code> passes a <code>JobControl</code> to the handler as well:</p>
+
+<pre><code class="language-rust" data-include="examples/client/src/lib.rs#job-control"></code></pre>
+
+<ul>
+  <li><code>job.idle()</code> says the job will mostly wait from now on (on a slow remote service, a human): it stops counting against the concurrency limit, so the worker takes other jobs, while its lease keeps being renewed.</li>
+  <li><code>job.throttle(pause, reason)</code> says the service behind the worker is overloaded: claiming pauses for <code>pause</code> and an adaptive limit halves.</li>
+</ul>
+
+<h2 id="shutdown">Shutdown and drain deadlines</h2>
+
+<p>The worker runs until the <code>Notify</code> you passed is notified (use <code>notify_one</code>). It then stops claiming, hands back anything it claimed but has not started, gives up its place in line, and waits for running handlers.</p>
+
+<ul>
+  <li>Without <code>.drain(…)</code> it waits for every handler, however long.</li>
+  <li>With <code>.drain(d)</code>, handlers still running after <code>d</code> are dropped at their next <code>.await</code> and their jobs are failed with the default backoff — or released to run again at once with <code>.release_drained()</code>. They are never reported complete. Handlers stuck outside an <code>.await</code> five seconds later are abandoned and come back when their lease lapses.</li>
+</ul>
+
+<p>Pair <code>drain</code> with your platform's termination grace period: if Kubernetes waits 30 seconds after SIGTERM, drain for 20.</p>
+
+<h2 id="errors">When the worker gives up</h2>
+
+<p>Transient failures — network errors, timeouts, overload, no leader — never end a worker; it waits and tries again. A refusal the same request would meet again ends it with that error: revoked credentials (<code>Auth</code>), an unknown database, invalid options (<code>Server { code: "invalid_options" }</code>). <code>queue_purging</code> does not: when the last module declaring a queue is removed and purged, the queue refuses every operation until the purge has deleted it, and the worker waits that out like a transient failure (<code>FlowerError::is_transient</code> says so), while the module listing (<code>cargo flower modules</code>) shows the module purging. Run workers under a supervisor that restarts them and alerts on repeated exits.</p>
+
+<h2 id="external-values">External values with <code>reconcile</code></h2>
+
+<p>Some values are computed outside Flower — a word count from a service, a price from a supplier — but should behave like derived values. A guest declares an <strong>external value</strong> with <code>flower_sdk::external!</code>: an input computed from the database, and a contract for the result. Listed among the app's components, it brings its collections, its trigger and the operations workers use; the <code>http</code> option (<code>external!(.., http)</code>) is what lets a worker reach those operations over HTTP, and the authorization component's <code>methods</code> table gives them access other than the default (<code>("words.publish", Access::Check(worker))</code>). The <code>reconcile</code> worker watches for inputs that changed, calls your function with each, and publishes the result back; a result for an input that has since changed is rejected and recomputed. It runs for one key (<code>.args(…)</code>), drains a pool of stale keys, or splits a pool between processes under leases (<code>.leased()</code>). The repository's <code>examples/external-transactions</code> guest and <code>crates/flower-worker/tests/reconcile.rs</code> show both sides.</p>
+
+<h2 id="testing">Testing workers</h2>
+
+<p>With the <code>testing</code> feature, <code>flower_worker::testing::FakeQueue</code> is an in-memory queue with the server's claiming rules on Tokio's clock, so worker tests run in paused time without a server. See <a href="testing.html#workers">Testing applications</a>.</p>
+<h2 id="typed-workers">Typed payloads and lease handles</h2>
+<p><code>run_typed_queue_worker</code> accepts a <code>TypedQueue&lt;Payload, Result&gt;</code> descriptor and passes a decoded <code>TypedJob&lt;Payload&gt;</code> to the handler. The worker renews and settles the lease automatically; incompatible payloads are dead-lettered. Manual workers use <code>claim_typed</code> and its lease handle for heartbeat, typed completion, failure and release, with the database, queue, claim token and fence already bound.</p>
+<p>Manual claims return one <code>ClaimOutcome&lt;Payload, Result&gt;</code> per item, so an incompatible payload never discards other claims. A decoding error retains the raw payload and its lease. Terminal operations consume the lease; a <code>SettlementError</code> returns it via <code>into_lease()</code> for explicit retry under the same claim identity. Heartbeat borrows the handle. Dropping a settlement future or lease performs no network cleanup; its server lease expires normally. Use request cancellation and await the error when ownership must be recovered.</p>
+<pre><code class="language-rust" data-include="examples/client/src/lib.rs#owned-claim"></code></pre>

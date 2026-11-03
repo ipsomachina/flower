@@ -1,0 +1,128 @@
+<h1>Guest cryptography</h1>
+<p class="lede">Guests hash, sign, verify, encrypt and run passkey ceremonies through the host: no primitive runs in Wasm, and managed secret keys never enter guest memory. Each database keeps its keys in a replicated catalog that operators provision and rotate.</p>
+
+<h2 id="setup">The crypto host</h2>
+
+<p>Every server runs guest crypto: hashing, randomness, JWTs and JWEs with keys the guest supplies, and WebAuthn need no configuration. Every operation goes through <code>ctx.crypto()</code>, which query, mutation and derived contexts all offer; it borrows the context, so create one, use it and drop it. Bytes are plain Rust slices; <code>hex_encode</code>/<code>hex_decode</code> and <code>webauthn::base64url_encode</code>/<code>base64url_decode</code> convert for the wire. Crypto failures are ordinary failures you can map to your own codes, not traps.</p>
+
+<p><a href="#managed-keys">Managed keys</a> are the one part that needs an operator. Each database's catalog is sealed by a 32-byte <strong>wrapping key</strong> that every member mounts:</p>
+
+<pre><code class="language-bash">head -c 32 /dev/urandom &gt; wrapping.key        # keep it secret, back it up
+cargo flower serve --dir data --id 1 --bootstrap 1 --admin-token secret \
+  --key-wrapping-file wrapping.key</code></pre>
+
+<p>A member started without one still applies the catalogs it replicates, but serves no catalog key: guests calling a managed key there fail <code>KEYS_LOCKED</code>, and key changes sent to it answer 503 <code>KEYS_LOCKED</code>: retry once a member that has the key leads. Everything else keeps working.</p>
+
+<h2 id="determinism">Hashing and randomness</h2>
+
+<pre><code class="language-rust" data-include="examples/snippets/src/crypto.rs#digest"></code></pre>
+
+<p>Everything except randomness is deterministic, so queries, derived values and authorization hooks can hash, verify and decrypt. <code>random_bytes</code> (at most 1,024 bytes a call) and anything that draws randomness — key pairs, WebAuthn challenges, JWE without an explicit nonce — works only in mutations; elsewhere it fails with <code>INVALID_INVOCATION</code>. A mutation's random output is decided once on the leader and replicated, like the rest of its effects.</p>
+
+<h2 id="managed-keys">Managed keys</h2>
+
+<p>A module <strong>declares</strong> the keys it uses by an alias, an algorithm and the usages it needs. An operator <strong>generates</strong> (or imports) a key in the database's catalog and <strong>binds</strong> it to that alias, granting usages. Both sides must agree: an undeclared alias fails <code>FORBIDDEN_USAGE</code>, an unbound one <code>UNKNOWN_KEY</code> (<code>managed key "tickets" is not bound</code>).</p>
+
+<pre><code class="language-rust" data-include="examples/snippets/src/crypto.rs#declare"></code></pre>
+
+<p>Each declaration is a component; list it with the rest:</p>
+
+<pre><code class="language-rust" data-include="examples/snippets/src/crypto.rs#app"></code></pre>
+
+<p>The operator side, with the admin token, names the database whose catalog it changes (<code>--db</code>, before or after the subcommand):</p>
+
+<pre><code class="language-bash">export FLOWER_ADMIN_TOKEN=secret
+cargo flower keys --db app generate --name ticket-signing --algorithm Ed25519
+cargo flower keys --db app generate --name vault-2026 --algorithm A256GCM
+cargo flower keys --db app bind --alias tickets --key ticket-signing --usages sign,verify,publicKey
+cargo flower keys --db app bind --alias vault --key vault-2026 --usages encrypt,decrypt
+cargo flower keys --db app</code></pre>
+
+<p>Each change prints its request ID and the catalog's new revision, then the catalog; the listing alone is:</p>
+
+<pre><code class="language-console">key=ticket-signing algorithm=Ed25519 active=1 versions=1:live
+key=vault-2026 algorithm=A256GCM active=1 versions=1:live
+binding=tickets key=ticket-signing usages=publicKey,sign,verify
+binding=vault key=vault-2026 usages=decrypt,encrypt</code></pre>
+
+<p>A change is replicated through the database's group and runs under a request ID: pass <code>--request-id</code> to retry one safely. <code>keys import</code> seals existing key material locally with the wrapping key before sending it, so it never travels in the clear. Without <code>--db</code>, <code>keys</code> lists every database's catalog.</p>
+
+<p>To separate offline preparation from online import, seal on the machine holding the wrapping key, then import the envelope on an operator machine:</p>
+<pre><code class="language-bash">cargo flower keys seal --key-file private.key --wrapping-file wrapping.key --out sealed.json
+cargo flower keys --db shop --request-id import-boxes import --name boxes --algorithm X25519 --sealed-file sealed.json</code></pre>
+<p>Concurrent cold uses of the same managed key share one native preparation when the coordination fits <code>--key-cache-bytes</code>. Full or zero budgets fall back to independent preparation without refusing crypto. Each call still checks the current binding and lifecycle; the cache grants no authority.</p>
+
+<p>Managed X25519 keys also support <code>crypto.nacl().box_before_managed(&amp;peer, &amp;key, ManagedKeyRef::Current)</code>. It returns a non-exportable shared-key handle for <code>box_after</code> and <code>box_open_after</code>. Derivation requires <code>derive</code>; each use additionally requires <code>encrypt</code> or <code>decrypt</code>. Handles live only for that invocation, share a 1 MiB native memory budget, and cannot be serialized. Rotation stops old handles encrypting while allowing decryption; revocation stops both.</p>
+
+<table>
+  <thead><tr><th>Algorithm</th><th>Usages</th><th>Operations</th></tr></thead>
+  <tbody>
+    <tr><td><code>Ed25519</code></td><td>sign, verify, publicKey</td><td>signatures, JWT EdDSA, NaCl signing</td></tr>
+    <tr><td><code>P256</code></td><td>sign, verify, publicKey</td><td>signatures, JWT ES256</td></tr>
+    <tr><td><code>Rsa</code> (2048–8192 bits)</td><td>sign, verify, publicKey</td><td>PKCS#1 v1.5 SHA-256 signatures, JWT RS256</td></tr>
+    <tr><td><code>Hs256</code></td><td>sign, verify</td><td>MACs, JWT HS256</td></tr>
+    <tr><td><code>A256Gcm</code></td><td>encrypt, decrypt</td><td>JWE <code>dir</code>/<code>A256GCM</code></td></tr>
+    <tr><td><code>XSalsa20Poly1305</code></td><td>encrypt, decrypt</td><td>NaCl secretbox</td></tr>
+    <tr><td><code>X25519</code></td><td>encrypt, decrypt, derive, publicKey</td><td>NaCl box</td></tr>
+  </tbody>
+</table>
+
+<p><strong>Rotation.</strong> Each key has numbered versions, one active. <code>keys rotate</code> adds a new active version; signing and encrypting use it from then on. Older versions keep verifying and decrypting until an operator <code>retire</code>s (verify and decrypt only), <code>revoke</code>s (nothing) or <code>destroy</code>s them. JWTs carry the version in their <code>kid</code> (<code>flower.&lt;key id&gt;.&lt;version&gt;</code>), so tokens issued before a rotation keep verifying.</p>
+
+<p><strong>Isolation.</strong> Each database has its own catalog. A key generated and bound in <code>app</code> does not exist in any other database, even one in the same group: the same module deployed into another database answers <code>UNKNOWN_KEY</code> until that database's own catalog binds the alias.</p>
+
+<p>Results that used a managed key are never served from the query cache, and any catalog change re-evaluates derived values, watches and authorization decisions that used a key — so revoking a key takes effect everywhere at once.</p>
+
+<h2 id="jwt">Signed tokens (JWT)</h2>
+
+<pre><code class="language-rust" data-include="examples/snippets/src/crypto.rs#jwt"></code></pre>
+
+<p>A ticket's protected header names the binding's algorithm and the version that signed it:</p>
+
+<pre><code class="language-json">{"alg":"EdDSA","kid":"flower.kVmQNyYF7VeHo0uqfYzyIQ.1","typ":"JWT"}</code></pre>
+
+<pre><code class="language-json">{"ok":true,"value":"ada"}                                                       // ticket_holder
+{"ok":true,"value":{"kid":"flower.kVmQNyYF7VeHo0uqfYzyIQ.1","x":"sOCdOyVfLhz-zEL-F7eeTRE2geKUoQQXNi9hjGUlbAE"}}   // ticket_key</code></pre>
+
+<ul>
+  <li>With a managed key, the binding fixes the algorithm and the <code>kid</code>. With raw keys — <code>JwtKey::Bytes(secret, KeyFormat::Raw)</code> for HS256 (at least 32 bytes), <code>KeyFormat::Der</code> or <code>JwtKey::Pem</code> for public keys — signing needs <code>SignOptions::algorithm</code> and verifying a non-empty <code>VerifyOptions::algorithms</code> allowlist: the token's own <code>alg</code> never decides.</li>
+  <li>Verification checks <code>exp</code> (required unless <code>require_expiration: Some(false)</code>), <code>nbf</code>, and, when you ask, <code>iss</code>, <code>sub</code> and <code>typ</code>. The audience must be validated explicitly: a token carrying <code>aud</code> fails unless you set <code>audience</code>. Check custom claims yourself.</li>
+  <li>Verification does not poll the clock. It declares when its answer changes — at <code>exp</code> for a valid token — so a query checking a token is cached, and its watches hold, until then.</li>
+  <li>Failures come back as <code>CRYPTO_ERROR</code> with messages such as <code>JWT expired</code>; map them to your own codes, as <code>ticket_holder</code> does.</li>
+</ul>
+
+<h2 id="jwe">Encrypted tokens (JWE)</h2>
+
+<pre><code class="language-rust" data-include="examples/snippets/src/crypto.rs#jwe"></code></pre>
+
+<p>Only compact <code>dir</code> + <code>A256GCM</code> is supported, with a managed <code>A256Gcm</code> key or a raw 32-byte key. Pass an explicit 12-byte nonce to encrypt outside a mutation, and never reuse one under the same key. <code>decrypt</code> validates standard claims like <code>verify</code>.</p>
+
+<h2 id="webauthn">Passkeys (WebAuthn)</h2>
+
+<p>A WebAuthn ceremony takes two mutations: one creates options with a fresh challenge and stores it, the other consumes the challenge and verifies the browser's response.</p>
+
+<pre><code class="language-rust" data-include="examples/snippets/src/crypto.rs#webauthn"></code></pre>
+
+<p><code>begin_registration</code> returns <code>PublicKeyCredentialCreationOptionsJSON</code> for the browser:</p>
+
+<pre><code class="language-json">{"attestation":"none","authenticatorSelection":{"requireResidentKey":true,"residentKey":"required","userVerification":"required"},
+ "challenge":"_hMdwFGw8RlggxK4GkP2HjWBfOWnNbAIqt2x48x_mZQ","excludeCredentials":[],
+ "pubKeyCredParams":[{"alg":-8,"type":"public-key"},{"alg":-7,"type":"public-key"},{"alg":-257,"type":"public-key"}],
+ "rp":{"id":"example.com","name":"Example"}, …}</code></pre>
+
+<ul>
+  <li>The option builders default to discoverable credentials, required user verification and no attestation, offering EdDSA, ES256 and RS256. <code>RegistrationOptions::new</code> defaults to <em>preferred</em> user verification, so set it to match the options, as above.</li>
+  <li>The host checks the challenge, the exact origin, the RP ID hash, user presence and verification, the credential algorithm and the signature. Attestation statements other than <code>none</code> are not evaluated.</li>
+  <li>Store <code>sign_count</code> after each sign-in. If the stored or new counter is non-zero, the new one must be greater, or verification fails with <code>WEBAUTHN_COUNTER</code> (a possibly cloned authenticator). Synced passkeys usually report zero.</li>
+  <li>Challenges must be single-use. The host only compares; deleting the stored challenge, as the mutations above do, is what prevents replay.</li>
+  <li><code>flower_sdk::crypto::webauthn::Authentication</code> (a result) and <code>flower_sdk::auth::Authentication</code> (the hook mode) share a name: import one under another name if you need both.</li>
+</ul>
+
+<h2 id="other-primitives">Other primitives</h2>
+
+<ul>
+  <li><strong>NaCl</strong> (<code>crypto.nacl()</code>): secretbox, box, Ed25519 signing and detached signatures with explicit 24-byte nonces, SHA-512, and constant-time comparison, in NaCl's byte layouts.</li>
+  <li><strong>Raw managed operations</strong>: <code>managed_sign</code>, <code>managed_verify</code>, <code>managed_public_key</code> and <code>managed_version</code> on any declared key, plus typed shortcuts for managed Ed25519 keys: <code>sign</code>, <code>verify</code> and <code>public_key</code> (which also reads an X25519 key).</li>
+</ul>
+
+<p>There is no HMAC with a raw key (use a managed <code>Hs256</code> key) and no JWKS fetching (guests have no network). Error codes: <code>CRYPTO_ERROR</code>, <code>UNKNOWN_KEY</code>, <code>UNKNOWN_VERSION</code>, <code>FORBIDDEN_USAGE</code>, <code>KEYS_LOCKED</code> (the member has no wrapping key mounted), <code>KEY_REVOKED</code>, <code>KEY_DESTROYED</code>, <code>WEBAUTHN_COUNTER</code>; see <a href="../reference/errors.html">Error codes</a>.</p>

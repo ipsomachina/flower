@@ -1,0 +1,62 @@
+[package]
+name = "flower-client"
+version = "0.0.20261105"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Flower native client: typed calls, retry, sync-down replicas and offline intents"
+
+[dependencies]
+flower-protocol = { version = "0.0.20261105", path = "../flower-protocol" }
+flower-engine = { version = "0.0.20261105", path = "../flower-engine", optional = true }
+flower-sdk = { version = "0.0.20261105", path = "../flower-sdk" }
+# HTTP/1.1 and HTTP/2 (h2c by prior knowledge, h2 by ALPN) over rustls
+# with the AWS-LC provider, as v1: the platform verifier plus extra PEM
+# roots (needs clang to build on Windows ARM64, like peer TLS).
+reqwest = { version = "0.13", default-features = false, features = ["http2", "rustls", "stream"] }
+tokio = { version = "1", features = ["rt", "macros", "sync", "time"] }
+tokio-util = "0.7"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid = { version = "1", features = ["v4"] }
+futures-util = "0.3"
+base64 = "0.22"
+tracing = "0.1"
+async-trait = "0.1"
+fastrand = "2"
+sha2 = "0.10"
+axum = { version = "0.8", optional = true, features = ["http2"] }
+
+[features]
+default = []
+replica = ["dep:flower-engine"]
+conformance = ["dep:axum", "tokio/net", "tokio/rt-multi-thread"]
+
+[[test]]
+name = "conformance"
+required-features = ["conformance"]
+
+[[test]]
+name = "client"
+required-features = ["replica"]
+
+[dev-dependencies]
+flower-engine = { path = "../flower-engine" }
+tempfile = "3"
+flower-crypto = { path = "../flower-crypto" }
+flower-server = { path = "../flower-server" }
+flower-cluster = { path = "../flower-cluster" }
+flower-backup = { path = "../flower-backup" }
+openraft = { package = "flower-openraft", version = "=0.9.25-flower.1" }
+async-trait = "0.1"
+tokio = { version = "1", features = ["net", "io-util", "rt-multi-thread", "test-util"] }
+# A local TLS and HTTP/2 server for the transport tests.
+hyper = { version = "1", features = ["server", "http1", "http2"] }
+hyper-util = { version = "0.1", features = ["tokio", "server", "server-auto", "service"] }
+http-body-util = "0.1"
+tokio-rustls = { version = "0.26.5", default-features = false, features = ["aws-lc-rs", "tls12"] }
+
+[lints]
+workspace = true
