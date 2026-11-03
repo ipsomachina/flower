@@ -1,0 +1,22 @@
+[package]
+publish = false
+name = "flower-guest-crypto"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "A real Flower guest exercising guest crypto: compiled to wasm32 and run through wasmtime by engine tests"
+
+# Its own guest, not `flower-guest-test`: the probes pull in the SDK's
+# NaCl and JOSE code, and every test deploying the base guest would
+# compile that too.
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+flower-sdk = { version = "0.0.20261105", path = "../flower-sdk" }
+
+[lints]
+workspace = true

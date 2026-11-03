@@ -1,0 +1,64 @@
+<h1>Watches</h1>
+<p class="lede">A watch keeps one query's result up to date. You subscribe to a query and its arguments; the server sends the current value, then a new value — or a patch — whenever a commit changes what the query returns.</p>
+
+<h2 id="subscribing">Subscribing</h2>
+
+<p>A watch is a <code>POST /v1/watch</code> whose body is exactly a query's — <code>db</code>, <code>module</code>, <code>name</code>, <code>args</code>, and optionally <code>credentials</code> — answered as server-sent events:</p>
+
+<pre><code class="language-bash">curl -sN http://127.0.0.1:8080/v1/watch -H 'content-type: application/json' \
+  -d '{"db":"demo","module":"tasks","name":"open_tasks","args":{}}'</code></pre>
+
+<pre><code class="language-sse">event: snapshot
+data: {"revision":3,"id":1,"value":[{"id":"bread","title":"Bake bread"}]}
+
+event: snapshot
+data: {"revision":4,"id":3,"value":[{"id":"eggs","title":"Buy eggs"},{"id":"bread","title":"Bake bread"}]}
+
+event: snapshot
+data: {"revision":5,"id":4,"value":[{"id":"eggs","title":"Buy eggs"}]}</code></pre>
+
+<ul>
+  <li>The first event is always a <code>snapshot</code> of the current value. Then each change to the result produces one event carrying the <code>revision</code> it was computed at, and an <code>id</code> naming the value.</li>
+  <li>With <code>"deltas":true</code> in the body, a change may arrive as a <code>patch</code>: an RFC 6902 JSON Patch (<code>add</code>, <code>remove</code>, <code>replace</code>) against the value whose <code>id</code> is <code>base</code> — always the last one delivered. Patches are sent only when smaller than the whole value:
+<pre><code class="language-sse">event: patch
+data: {"revision":4,"id":3,"base":2,"patch":[{"op":"add","path":"/0","value":{"id":"eggs","title":"Buy eggs"}}]}
+
+event: patch
+data: {"revision":5,"id":4,"base":3,"patch":[{"op":"remove","path":"/1"}]}</code></pre></li>
+  <li>A watch that cannot start answers like the query would, with an ordinary error response: 404 <code>UNKNOWN_METHOD</code> for a name the module does not expose over HTTP, 403 when the authorization hook refuses, 422 when the query itself fails, 400 for a body that is not a query's (<code>args</code> is required; send <code>{}</code>).</li>
+  <li>Once streaming, an <code>error</code> event (<code>{"code","message"}</code>, plus <code>details</code> when the query's own failure carries them) ends the stream. Reconnect, unless the code says you should not (<code>unauthorized</code>).</li>
+  <li>An idle stream gets a <code>: watching</code> comment every 15 seconds, to keep proxies from closing it.</li>
+  <li>Credentials go in the body's <code>credentials</code> member, as for a query, or in an <code>Authorization: Bearer</code> header, which reaches the hook as <code>{"bearer": token}</code>. The module's authorization hook runs before the first snapshot.</li>
+  <li>The request's deadline (<code>x-flower-timeout-ms</code>) bounds the first snapshot only, and a trusted gateway's <code>timestamp_ms</code> likewise: later refreshes run on the serving member's clock, without a deadline from the request, and are shared with other subscribers.</li>
+</ul>
+
+<p>From Rust, <code>flower-client</code> wraps all of this in typed, reconnecting subscriptions; see <a href="../guides/rust-client.html#watches">Calling Flower from Rust</a>.</p>
+
+<h2 id="when-a-watch-wakes">When a watch wakes</h2>
+
+<p>Each evaluation of the query produces a <strong>dependency certificate</strong>: the records it read (present or absent), the scan and index ranges it covered (so an insertion into an empty range counts), and the derived values it read, expanded transitively. A commit wakes a watch only if it touched something in that certificate, or changed the module's code. Unrelated writes cost one check against the change journal.</p>
+
+<p>A woken watch re-evaluates its query and publishes only if the result's bytes changed. Values never go back in revision; several commits in quick succession may be coalesced into one event. Time also wakes watches: at an instant the query declared with <code>changes_at</code>, or every 250 ms for a query that read <code>now()</code>. See <a href="time.html">Time</a>.</p>
+
+<p>Watches on the same query, arguments and principal share one evaluation per member, however many clients subscribe. Access is never shared: every subscriber is authorized separately.</p>
+
+<h2 id="reauthorization">Reauthorization</h2>
+
+<p>Every delivery is authorized at the revision it shows. Before publishing a refresh, the server re-runs each subscriber's authorization against the same view it evaluates the query on. It also rechecks when a commit touches what the decision read, at the decision's declared expiry, when a managed key the decision used changes, and at least every 30 seconds. A subscriber who is no longer allowed gets an <code>error</code> event with code <code>unauthorized</code>, and the stream ends; one whose principal changed gets <code>watch_scope_changed</code> and should reconnect.</p>
+
+<h2 id="consistency-and-failover">Consistency and failover</h2>
+
+<p>A watch's first snapshot reads as the query declares. Watches take no staleness bound from the caller. A follower cut off from its leader keeps its watches open but cannot refresh them, except replica-local watches with a bound, which it ends once they are past it. When a stream ends — leader change, member shutdown (<code>shutdown</code>), partition move, redeployment removing the alias (<code>UNKNOWN_METHOD</code>) — reconnect and you get a fresh snapshot.</p>
+
+<div class="callout">
+<p><span class="callout-title">Not an event log</span> A watch delivers the <em>current value</em> of a query, not the history of changes. Reconnecting does not replay what you missed; there is no <code>Last-Event-ID</code>. If you need every change, write changes to a collection (a trigger is a good place) and watch or page that.</p>
+</div>
+
+<h2 id="limits">Limits</h2>
+
+<ul>
+  <li>Each subscriber has a 32-event queue. A subscriber that falls that far behind is dropped and its stream closes without an error event; reconnect.</li>
+  <li>A query that reads more than 4,096 dependencies gets a broad certificate: any change to its database wakes it. Keep watched queries focused.</li>
+  <li>Each watch is an HTTP/2 stream. The Rust client opens another connection per 100 watches.</li>
+  <li>A member holds at most 64 MiB of watches' arguments and credentials. Past that, a new watch is refused as an overload (503, retryable) until others end.</li>
+</ul>

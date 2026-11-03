@@ -1,0 +1,23 @@
+[package]
+name = "flower-sdk"
+version = "0.0.20261105"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Guest runtime, codecs, descriptors and transactional components for Flower applications"
+
+[dependencies]
+# Build-time only: derive and attribute macros expand on the host and emit
+# no runtime code of their own, so the guest still links core plus alloc.
+flower-sdk-macros = { version = "0.0.20261105", path = "../flower-sdk-macros" }
+
+[features]
+# Native (non-Wasm) host bridge: `abi::native` routes host and crypto
+# calls to a thread-local handler, so an embedder runs an `App`
+# in-process. Pulls in `std`; guests never enable it.
+native-host = []
+
+[lints]
+workspace = true

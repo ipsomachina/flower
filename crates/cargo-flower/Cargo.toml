@@ -1,0 +1,42 @@
+[package]
+name = "cargo-flower"
+version = "0.0.20261105"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Flower operator tooling: contracts, deployment, status, backup and serving"
+
+[[bin]]
+name = "cargo-flower"
+path = "src/main.rs"
+
+[dependencies]
+flower-server = { version = "0.0.20261105", path = "../flower-server" }
+flower-client = { version = "0.0.20261105", path = "../flower-client" }
+flower-cluster = { version = "0.0.20261105", path = "../flower-cluster" }
+flower-engine = { version = "0.0.20261105", path = "../flower-engine" }
+flower-sdk = { version = "0.0.20261105", path = "../flower-sdk" }
+flower-crypto = { version = "0.0.20261105", path = "../flower-crypto" }
+flower-backup = { version = "0.0.20261105", path = "../flower-backup", features = ["s3"] }
+object_store = "0.14"
+clap = { version = "4", features = ["derive", "env"] }
+openraft = { package = "flower-openraft", version = "=0.9.25-flower.1" }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "process", "time"] }
+serde_json = "1"
+serde = { version = "1", features = ["derive"] }
+sha2 = "0.10"
+rand = "0.9"
+zeroize = "1"
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { version = "1", features = ["process", "io-util", "time", "net"] }
+# An in-process S3 server for `serve --backup-url s3://…`.
+s3s = "0.17"
+s3s-fs = "0.17"
+hyper-util = { version = "0.1", features = ["server-auto", "service", "tokio"] }
+
+[lints]
+workspace = true

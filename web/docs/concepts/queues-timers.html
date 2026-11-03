@@ -1,0 +1,85 @@
+<h1>Queues and timers</h1>
+<p class="lede">Guests never touch the outside world. Work that must — sending email, calling a payment provider — becomes a durable job that a native worker claims under a fenced lease. Work that must happen later becomes a timer that fires a mutation.</p>
+
+<h2 id="queues">Queues</h2>
+
+<p>A mutation <strong>enqueues</strong> a job: a JSON payload in a named queue. The enqueue is part of the mutation, so the job exists exactly when the mutation commits and never if it rolls back. Workers then <strong>claim</strong> jobs, do the work, and <strong>report</strong> the outcome. A <code>TypedQueue&lt;P, R&gt;</code> static is the queue's declaration, its contract and its handle at once: listed among the app's components, it declares the queue, and the server checks every payload against <code>P</code> and every kept result against <code>R</code>:</p>
+
+<pre><code class="language-rust" data-include="examples/snippets/src/queues.rs#queue"></code></pre>
+
+<p>Calling <code>invite</code> twice for the same address shows the named job at work. The second call is the mutation's own failure, HTTP 422:</p>
+
+<pre><code class="language-json">{"ok":true,"value":"1ff7d39fc385f5fe1d53b0e5a4ca7e32","revision":5,"position":34,"duplicate":false}
+{"ok":false,"revision":5,"position":35,"code":"JOB_EXISTS","message":"job invite:ada@example.com already exists","duplicate":false}</code></pre>
+
+<p>Guest code uses only the queues its own module declares; naming any other fails with <code>queue_undeclared</code>. A queue's work belongs to the modules that declare it: when a removed module's data is <a href="../guides/deployments.html#removing-a-module">purged</a>, the queues no other module declares are deleted with it, and until that purge ends every operation on them is refused with <code>queue_purging</code>, changing nothing — retry once it is over. Below the typed handle, <code>Queue::enqueue(ctx, "mail", payload, &amp;options)</code> and its siblings take the queue's name and raw <code>Value</code>s, under the same rule; a <code>QueueDef</code> static declares a queue with explicit schemas for that layer.</p>
+
+<h3 id="enqueue-options">Enqueue options</h3>
+
+<table>
+  <thead><tr><th>Option</th><th>Default</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td><code>scope(s)</code></td><td><code>""</code></td><td>A logical partition of the queue — per tenant, per region. Workers claim from one scope at a time. Scopes separate work; they do not authenticate anyone.</td></tr>
+    <tr><td><code>priority(p)</code></td><td><code>0</code></td><td>Lower values are claimed first.</td></tr>
+    <tr><td><code>group(g)</code></td><td>none</td><td>Within a priority, each ready group's next job goes before any group's second: fair turns between, say, customers.</td></tr>
+    <tr><td><code>named(n)</code></td><td>random ID</td><td>A name unique within the scope. A second enqueue of a pending or claimed name fails <code>JOB_EXISTS</code>.</td></tr>
+    <tr><td><code>replace()</code></td><td>off</td><td>With a name: replace a completed or dead job of that name instead of failing.</td></tr>
+    <tr><td><code>delay_ms(d)</code> / <code>at_ms(t)</code></td><td>now</td><td>Not claimable before then; at most 30 days ahead. Use one or the other.</td></tr>
+    <tr><td><code>max_attempts(n)</code></td><td><code>5</code></td><td>Claims before the job dies (1–100).</td></tr>
+  </tbody>
+</table>
+
+<h3 id="claims-and-leases">Claims, leases and fencing</h3>
+
+<p>A claim takes up to 100 claimable jobs of one scope — due pending jobs, and claimed jobs whose lease lapsed — lowest priority first, then group turns, then the job that waited longest. Each claim:</p>
+
+<ul>
+  <li>uses one of the job's attempts;</li>
+  <li>holds a <strong>lease</strong> (30 seconds by default, at most an hour) that the worker renews while it works;</li>
+  <li>carries a secret <strong>token</strong> that every renewal and report must present;</li>
+  <li>carries a <strong>fencing token</strong>, larger than every one issued before it in that queue and scope. Pass it to the downstream system so it can refuse a write from a worker whose lease lapsed and was taken over.</li>
+</ul>
+
+<p>The worker then reports one of: <strong>complete</strong> (keep the job with a result), <strong>finish</strong> (delete it), <strong>fail</strong> (pending again after a delay, keeping its turn, or dead once attempts run out), <strong>kill</strong> (dead now) or <strong>release</strong> (hand it back without spending an attempt). A lapsed lease redelivers the job, so queues are <strong>at-least-once</strong>: make the work idempotent, or fence it.</p>
+
+<p>Claims are tied to the database's history: after a restore to an earlier point, holders of old claims can no longer renew or report.</p>
+
+<h3 id="who-claims">Who claims</h3>
+
+<p>Usually a native worker built with <a href="../guides/workers.html"><code>flower-worker</code></a>, over the worker HTTP endpoints (<code>/v1/queue/poll</code>, <code>/complete</code>, …) with the server's worker token. Native workers may name any queue, but never enqueue: jobs come only from mutations. Guest mutations can claim and report too, through the typed handle's <code>claim</code>, <code>complete</code>, <code>renew</code> and friends, which is useful for work that stays inside the database. Goblin Pizza's <code>pizza.deliver</code> renews a delivery drone's lease inside the paying mutation, so a drone whose lease lapsed cannot collect payment.</p>
+
+<p>Queries can watch a queue: <code>stats</code> and <code>ready</code> (on the typed handle, or <code>Queue::stats</code> and <code>Queue::ready</code> by name) return counts and whether a claim would succeed, from any context, and a query reading them is re-run when that changes — when a delayed job falls due or a lease lapses. The <code>flower-worker</code> crate uses this to sleep until there is work.</p>
+
+<h2 id="timers">Timers</h2>
+
+<p>A mutation schedules a <strong>timer</strong> by a stable ID: at a due time, the leader runs a mutation of the same module (the <em>handler</em>) with the arguments you gave. The handler is the mutation's own static and the arguments its own argument struct, so a mistake is a compile error; the arguments are also checked against its contract when the timer is scheduled. Scheduling an existing ID replaces the timer, which makes debouncing trivial.</p>
+
+<pre><code class="language-rust" data-include="examples/snippets/src/queues.rs#timer"></code></pre>
+
+<ul>
+  <li>The handler is a mutation of the same module. It needs no <code>http</code>, and an internal handler should have none: then no client can call it, as the 404 <code>UNKNOWN_METHOD</code> for <code>end_trial</code> shows.</li>
+  <li><code>Timers::after(ctx, id, delay, &amp;HANDLER, &amp;args)</code> takes a <code>core::time::Duration</code>; <code>Timers::at</code> an epoch-millisecond due time. <code>Timers::schedule</code> is the full form, over any mutation descriptor and raw arguments, with <code>ScheduleOptions</code>.</li>
+  <li>The due time means "not before". The leader fires due timers through the log on its maintenance tick (<code>--timer-sweep-ms</code>, one second by default) and as soon as a timer falls due, using the module's <em>current</em> code.</li>
+  <li>A handler that fails is retried, up to <code>max_attempts</code> (3 by default, at most 100, set through <code>ScheduleOptions</code>); after that the timer is <code>dead</code>. Operators inspect and revive timers with <code>cargo flower timer</code>, and guests with <code>Timers::get</code> and <code>scan</code> (from any context) and <code>retry</code>.</li>
+  <li>Timer IDs are any text of 1 to 128 bytes without control characters, so free-form identifiers work as they are:
+<pre><code class="language-console">$ cargo flower timer --db shop list
+{"args":{"account":"ada"},"attempts":0,"due_ms":1794752193392,"handler":"end_trial","id":"trial:ada","max_attempts":3,"state":"pending"}</code></pre></li>
+  <li>Timer firings have no caller and no principal; the authorization hook does not run for them.</li>
+</ul>
+
+<h3 id="registering">Registering them</h3>
+
+<p>The queue is a component; the timer's handler is an ordinary mutation:</p>
+
+<pre><code class="language-rust" data-include="examples/snippets/src/queues.rs#app"></code></pre>
+
+<h2 id="choosing">Queues, timers or tasks?</h2>
+
+<table>
+  <thead><tr><th>Use</th><th>When</th></tr></thead>
+  <tbody>
+    <tr><td>A <strong>queue</strong></td><td>The work happens outside Flower, may fail and be retried, and needs a worker process.</td></tr>
+    <tr><td>A <strong>timer</strong></td><td>A specific thing must happen inside Flower at or after a specific time: expire a trial, finish baking a pizza.</td></tr>
+    <tr><td>A <a href="derived.html#maintenance-tasks"><strong>maintenance task</strong></a></td><td>Periodic housekeeping whose need you can compute from the data: purge expired sessions, compact old rows.</td></tr>
+  </tbody>
+</table>

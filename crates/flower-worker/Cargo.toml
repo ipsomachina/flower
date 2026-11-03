@@ -1,0 +1,36 @@
+[package]
+name = "flower-worker"
+version = "0.0.20261105"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Flower native queue workers: claim, renew and report durable work over HTTP"
+
+[features]
+# An in-memory queue implementing QueueClient, for tests.
+testing = []
+
+[dependencies]
+flower-client = { version = "0.0.20261105", path = "../flower-client" }
+# Typed external work: the SDK's codecs and `external::Work`.
+flower-sdk = { version = "0.0.20261105", path = "../flower-sdk" }
+# Default owners: `worker-` and a random ID.
+uuid = { version = "1", features = ["v4"] }
+tokio = { version = "1", features = ["macros", "sync", "time", "rt"] }
+futures-util = "0.3"
+serde_json = "1"
+
+[dev-dependencies]
+flower-worker = { path = ".", features = ["testing"] }
+tempfile = "3"
+flower-server = { path = "../flower-server" }
+flower-cluster = { path = "../flower-cluster" }
+flower-engine = { path = "../flower-engine" }
+openraft = { package = "flower-openraft", version = "=0.9.25-flower.1" }
+tokio = { version = "1", features = ["net", "rt-multi-thread", "test-util"] }
+async-trait = "0.1"
+
+[lints]
+workspace = true

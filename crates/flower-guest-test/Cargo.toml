@@ -1,0 +1,25 @@
+[package]
+publish = false
+name = "flower-guest-test"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "A real Flower guest for execution tests: compiled to wasm32 and run through wasmtime"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+flower-sdk = { version = "0.0.20261105", path = "../flower-sdk" }
+
+[features]
+# Extra exports for the engine's runtime-limit tests (tests/limits.rs):
+# memory bombs, endless loops, deep recursion, an init side effect and
+# entropy probes. Off by default so the base guest's manifest is stable.
+limits = []
+
+[lints]
+workspace = true

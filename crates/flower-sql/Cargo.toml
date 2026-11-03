@@ -1,0 +1,15 @@
+[package]
+name = "flower-sql"
+version = "0.0.20261105"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Bounded read-only SQL planning and evaluation for Flower"
+
+[dependencies]
+flower-sdk = { version = "0.0.20261105", path = "../flower-sdk" }
+
+[lints]
+workspace = true

@@ -1,0 +1,22 @@
+[package]
+license.workspace = true
+name = "goblin-pizza"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+description = "Goblin Pizza: orders, oven timers and a delivery queue as a Flower guest"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+flower-sdk = { path = "../../crates/flower-sdk" }
+
+[features]
+# The authenticated kitchen: every method behind an access rule, bearer JWTs
+# verified in the authorization hook. `flower-bench --auth` deploys it.
+auth = []
+
+[lints]
+workspace = true

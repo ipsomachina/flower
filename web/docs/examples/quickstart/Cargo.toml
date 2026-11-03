@@ -1,0 +1,17 @@
+[package]
+license.workspace = true
+name = "tasks"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+flower-sdk = { path = "../../../../crates/flower-sdk" }
+
+# The testing guide's additions: run the module natively in tests.
+[dev-dependencies]
+flower-engine = { path = "../../../../crates/flower-engine" }
+flower-sdk = { path = "../../../../crates/flower-sdk", features = ["native-host"] }

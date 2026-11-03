@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Goblin Pizza Express · Flower live bench</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/style.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to the run</a>
+  <header class="top">
+    <div class="top-inner">
+      <div class="brand" id="brand">
+        <div>
+          <h1>Goblin Pizza Express</h1>
+          <p>Flower live bench · read-only</p>
+        </div>
+      </div>
+      <span class="pill" id="phase"><span class="dot" aria-hidden="true"></span><span id="phase-text">Connecting</span></span>
+      <span class="pill num" id="clock">—</span>
+      <span class="pill" id="connection" role="status"><span class="dot" aria-hidden="true"></span><span id="connection-text">connecting</span></span>
+    </div>
+  </header>
+  <main id="main">
+    <div class="banner" id="banner" role="status" aria-live="polite"><span class="text" id="banner-text">Waiting for the bench...</span></div>
+
+    <section class="tiles" aria-label="Right now">
+      <div class="tile hero"><div class="label">Goodput, customer calls per second</div><div class="value num" id="t-goodput">—</div><div class="sub" id="t-goodput-sub">this second</div></div>
+      <div class="tile"><div class="label">Write p99</div><div class="value num" id="t-write">—</div><div class="sub">this second</div></div>
+      <div class="tile"><div class="label">Read p99</div><div class="value num" id="t-read">—</div><div class="sub" id="t-read-sub">this second</div></div>
+      <div class="tile"><div class="label">Orders taken</div><div class="value num" id="t-orders">—</div><div class="sub" id="t-orders-sub">of the cap</div></div>
+      <div class="tile"><div class="label">Pizzas at the door</div><div class="value num" id="t-delivered">—</div><div class="sub">orders delivered</div></div>
+      <div class="tile"><div class="label">Coins</div><div class="value num" id="t-coins">—</div><div class="sub" id="t-coins-sub">earned + tipped</div></div>
+    </section>
+
+    <section aria-labelledby="cluster-title">
+      <div class="section-head"><h2 id="cluster-title">The cluster</h2><span class="muted" id="cluster-sub">One Raft group. The crown follows the leader.</span></div>
+      <div class="card"><div class="replicas" id="replicas"></div></div>
+    </section>
+
+    <section aria-labelledby="floor-title">
+      <div class="section-head"><h2 id="floor-title">The shop floor</h2><span class="muted">Live from Flower watches on <code>pizza.leaderboard</code>, one per tenant, patched in place</span></div>
+      <div class="tenants" id="tenants"></div>
+    </section>
+
+    <section aria-labelledby="yard-title">
+      <div class="section-head"><h2 id="yard-title">The drone yard</h2><span class="muted" id="yard-sub">Queue workers with leases</span></div>
+      <div class="yard">
+        <div class="card"><h3>Out for delivery</h3><ul class="drones" id="drones"></ul></div>
+        <div class="card"><h3>Dropped on purpose</h3><p class="small muted">The clumsy drone abandons claims; their leases lapse and another drone takes over. At the end, every stale token must be refused.</p><ul class="crates" id="crates"></ul></div>
+      </div>
+    </section>
+
+    <section aria-labelledby="charts-title">
+      <div class="section-head"><h2 id="charts-title">The measured window</h2><span class="muted">From the bench's own counters, one point per second. The red band runs from the leader kill to the first acknowledged write.</span></div>
+      <div class="charts" id="charts"></div>
+    </section>
+
+    <section aria-labelledby="audit-title">
+      <div class="section-head"><h2 id="audit-title">The audit</h2><span class="muted">Fresh reads after the drain, against every acknowledged effect</span></div>
+      <div class="card">
+        <ul class="checks" id="checks"></ul>
+        <div class="verdict" id="verdict" role="status"></div>
+      </div>
+    </section>
+  </main>
+  <footer>
+    <div><strong>Flower's own view.</strong> Each member serves its admin dashboard; paste the admin token the terminal printed.</div>
+    <ul id="admin-links"></ul>
+    <div>This page shows bench data only and changes nothing.</div>
+  </footer>
+</body>
+</html>

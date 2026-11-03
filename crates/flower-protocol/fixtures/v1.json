@@ -1,0 +1,429 @@
+[
+  {
+    "name": "query-null-argument",
+    "kind": "query_request",
+    "valid": true,
+    "payload": {
+      "db": "db",
+      "module": "tasks",
+      "name": "count",
+      "args": null
+    }
+  },
+  {
+    "name": "query-missing-module",
+    "kind": "query_request",
+    "valid": false,
+    "payload": {
+      "db": "db",
+      "name": "count",
+      "args": {}
+    }
+  },
+  {
+    "name": "mutation-with-precondition",
+    "kind": "mutation_request",
+    "valid": true,
+    "payload": {
+      "db": "db",
+      "module": "tasks",
+      "name": "put",
+      "args": {
+        "key": "one"
+      },
+      "idempotency_key": "intent-123",
+      "expected_revision": 7
+    }
+  },
+  {
+    "name": "mutation-malformed-precondition",
+    "kind": "mutation_request",
+    "valid": false,
+    "payload": {
+      "db": "db",
+      "module": "tasks",
+      "name": "put",
+      "args": {
+        "key": "one"
+      },
+      "expected_revision": "7"
+    }
+  },
+  {
+    "name": "watch-request-deltas",
+    "kind": "watch_request",
+    "valid": true,
+    "payload": {
+      "db": "db",
+      "module": "tasks",
+      "name": "list",
+      "args": {},
+      "deltas": true
+    }
+  },
+  {
+    "name": "watch-request-malformed-deltas",
+    "kind": "watch_request",
+    "valid": false,
+    "payload": {
+      "db": "db",
+      "module": "tasks",
+      "name": "list",
+      "args": {},
+      "deltas": "yes"
+    }
+  },
+  {
+    "name": "transaction-unit-step-and-principal",
+    "kind": "transaction_request",
+    "valid": true,
+    "payload": {
+      "steps": [
+        {
+          "db": "db",
+          "module": "tasks",
+          "method": "tick"
+        }
+      ],
+      "principal": {
+        "subject": "ada",
+        "tenant": "shop",
+        "claims": {
+          "role": "buyer"
+        }
+      },
+      "idempotency_key": "batch-123"
+    }
+  },
+  {
+    "name": "transaction-malformed-identity",
+    "kind": "transaction_request",
+    "valid": false,
+    "payload": {
+      "steps": [
+        {
+          "db": "db",
+          "module": "tasks",
+          "method": "tick"
+        }
+      ],
+      "idempotency_key": 42
+    }
+  },
+  {
+    "name": "explicit-null-is-a-value",
+    "kind": "call",
+    "valid": true,
+    "payload": {
+      "ok": true,
+      "value": null
+    }
+  },
+  {
+    "name": "missing-value",
+    "kind": "call",
+    "valid": false,
+    "payload": {
+      "ok": true
+    }
+  },
+  {
+    "name": "missing-ok",
+    "kind": "call",
+    "valid": false,
+    "payload": {
+      "value": null
+    }
+  },
+  {
+    "name": "mutation-ordering",
+    "kind": "mutation",
+    "valid": true,
+    "payload": {
+      "ok": true,
+      "value": "done",
+      "revision": 7,
+      "position": 12,
+      "duplicate": true
+    }
+  },
+  {
+    "name": "mutation-missing-position",
+    "kind": "mutation",
+    "valid": false,
+    "payload": {
+      "ok": true,
+      "value": null,
+      "revision": 7
+    }
+  },
+  {
+    "name": "mutation-malformed-token",
+    "kind": "mutation",
+    "valid": false,
+    "payload": {
+      "ok": true,
+      "value": null,
+      "revision": 7,
+      "position": 12,
+      "read_token": {
+        "version": 2,
+        "database": "db",
+        "group": "east",
+        "incarnation": "9",
+        "revision": "7",
+        "position": "12"
+      }
+    }
+  },
+  {
+    "name": "failure-payload",
+    "kind": "call",
+    "valid": true,
+    "payload": {
+      "ok": false,
+      "code": "TASK_LOCKED",
+      "message": "locked",
+      "details": {
+        "owner": "ada"
+      }
+    }
+  },
+  {
+    "name": "failure-missing-message",
+    "kind": "call",
+    "valid": false,
+    "payload": {
+      "ok": false,
+      "code": "TASK_LOCKED"
+    }
+  },
+  {
+    "name": "full-width-token",
+    "kind": "token",
+    "valid": true,
+    "payload": {
+      "version": 1,
+      "database": "db",
+      "group": "east",
+      "incarnation": "18446744073709551615",
+      "revision": "18446744073709551615",
+      "position": "18446744073709551615"
+    }
+  },
+  {
+    "name": "unknown-token-version",
+    "kind": "token",
+    "valid": false,
+    "payload": {
+      "version": 2,
+      "database": "db",
+      "group": "east",
+      "incarnation": "18446744073709551615",
+      "revision": "18446744073709551615",
+      "position": "18446744073709551615"
+    }
+  },
+  {
+    "name": "counter-leading-zero",
+    "kind": "token",
+    "valid": false,
+    "payload": {
+      "version": 1,
+      "database": "db",
+      "group": "east",
+      "incarnation": "18446744073709551615",
+      "revision": "01",
+      "position": "18446744073709551615"
+    }
+  },
+  {
+    "name": "counter-trailing-newline",
+    "kind": "token",
+    "valid": false,
+    "payload": {
+      "version": 1,
+      "database": "db",
+      "group": "east",
+      "incarnation": "18446744073709551615",
+      "revision": "1\n",
+      "position": "18446744073709551615"
+    }
+  },
+  {
+    "name": "counter-overflow",
+    "kind": "token",
+    "valid": false,
+    "payload": {
+      "version": 1,
+      "database": "db",
+      "group": "east",
+      "incarnation": "18446744073709551615",
+      "revision": "18446744073709551615",
+      "position": "18446744073709551616"
+    }
+  },
+  {
+    "name": "uninitialized-history",
+    "kind": "token",
+    "valid": false,
+    "payload": {
+      "version": 1,
+      "database": "db",
+      "group": "east",
+      "incarnation": "0",
+      "revision": "18446744073709551615",
+      "position": "18446744073709551615"
+    }
+  },
+  {
+    "name": "application-problem",
+    "kind": "problem",
+    "valid": true,
+    "payload": {
+      "status": 422,
+      "code": "TASK_LOCKED",
+      "message": "locked",
+      "origin": "application",
+      "execution": "decided",
+      "retryable": false,
+      "details": {
+        "owner": "ada"
+      }
+    }
+  },
+  {
+    "name": "nonstandard-http-status",
+    "kind": "problem",
+    "valid": true,
+    "payload": {
+      "status": 600,
+      "code": "TASK_LOCKED",
+      "message": "locked",
+      "origin": "application",
+      "execution": "decided",
+      "retryable": false,
+      "details": {
+        "owner": "ada"
+      }
+    }
+  },
+  {
+    "name": "invalid-http-status",
+    "kind": "problem",
+    "valid": false,
+    "payload": {
+      "status": 0,
+      "code": "TASK_LOCKED",
+      "message": "locked",
+      "origin": "application",
+      "execution": "decided",
+      "retryable": false,
+      "details": {
+        "owner": "ada"
+      }
+    }
+  },
+  {
+    "name": "problem-missing-certainty",
+    "kind": "problem",
+    "valid": false,
+    "payload": {
+      "status": 503,
+      "code": "quorum",
+      "message": "retry",
+      "origin": "host",
+      "retryable": true
+    }
+  },
+  {
+    "name": "initialized-watch-history",
+    "kind": "history",
+    "valid": true,
+    "payload": {
+      "group": "east",
+      "incarnation": "9"
+    }
+  },
+  {
+    "name": "empty-watch-history",
+    "kind": "history",
+    "valid": false,
+    "payload": {
+      "group": "",
+      "incarnation": "9"
+    }
+  },
+  {
+    "name": "zero-watch-history",
+    "kind": "history",
+    "valid": false,
+    "payload": {
+      "group": "east",
+      "incarnation": "0"
+    }
+  },
+  {
+    "name": "empty-sync-coverage",
+    "kind": "sync",
+    "since": 12,
+    "valid": true,
+    "payload": {
+      "version": 1,
+      "since": 12,
+      "entries": [],
+      "current": 15,
+      "snapshot": null,
+      "incarnation": 9
+    }
+  },
+  {
+    "name": "empty-sync-wrong-since",
+    "kind": "sync",
+    "since": 12,
+    "valid": false,
+    "payload": {
+      "version": 1,
+      "since": 11,
+      "entries": [],
+      "current": 15,
+      "snapshot": null,
+      "incarnation": 9
+    }
+  },
+  {
+    "name": "unordered-sync",
+    "kind": "sync",
+    "since": 12,
+    "valid": false,
+    "payload": {
+      "version": 1,
+      "since": 12,
+      "entries": [
+        {
+          "index": 14,
+          "write": {}
+        },
+        {
+          "index": 13,
+          "write": {}
+        }
+      ],
+      "current": 15,
+      "snapshot": null,
+      "incarnation": 9
+    }
+  },
+  {
+    "name": "future-handshake-is-inspectable",
+    "kind": "discovery",
+    "valid": true,
+    "payload": {
+      "version": 2,
+      "capabilities": [
+        "read_tokens",
+        "future_extension"
+      ]
+    }
+  }
+]

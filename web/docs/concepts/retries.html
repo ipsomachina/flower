@@ -1,0 +1,56 @@
+<h1>Retries and receipts</h1>
+<p class="lede">Networks fail after a write has committed but before its answer arrives. Give each write a request ID and retry with the same one: Flower answers the original outcome instead of running the write again.</p>
+
+<h2 id="request-ids">Request IDs</h2>
+
+<p>A mutation or transaction request may carry an <code>idempotency_key</code> (in the Rust client, <code>MutationOptions::request_id</code>; in the CLI, <code>--request-id</code>). When the write commits, the database stores a <strong>receipt</strong>: the outcome under that key, with its value, revision and position. A later request with the same key does not run again; it is answered from the receipt, with <code>"duplicate": true</code>:</p>
+
+<pre><code class="language-json">{"ok":true,"value":{"done":false,"title":"Buy milk"},"revision":1,"position":4,"duplicate":false}
+{"ok":true,"value":{"done":false,"title":"Buy milk"},"revision":1,"position":4,"duplicate":true}</code></pre>
+
+<p>That holds whichever member the retry reaches, and after any number of later writes. A business failure is an outcome too: a retry of a request that failed with <code>TASK_EXISTS</code> gets <code>TASK_EXISTS</code> again. If the original is still committing when the retry arrives, the retry waits for it (up to five seconds).</p>
+
+<p>Retries are authorized again before they are answered: a caller whose credentials were revoked cannot read a recorded result. A receipt also remembers which principal wrote it; another principal presenting the same key gets <code>identity_conflict</code>.</p>
+
+<div class="callout warning">
+<p><span class="callout-title">Choose keys per intent</span> A plain key is not checked against the request's content: reusing a key for a <em>different</em> call replays the first call's result. Derive keys from what the user meant to do ("order 42 of cart 7"), persist them before sending, and reuse them only for retries of that same intent. If you want the server to check, use a <a href="#scoped-ids">scoped ID</a>.</p>
+</div>
+
+<h2 id="unknown-outcomes">When to retry</h2>
+
+<p>Retry with the same key whenever you cannot tell whether a write committed: a timeout, a dropped connection, a cancelled request, <code>503 leader_isolated</code>, <code>503 forward_failed</code>. Retry, with or without the key, after refusals that guarantee nothing ran: <code>503 overloaded</code> (honour <code>Retry-After</code>), <code>503 quorum</code>, <code>503 partition_moving</code> and the other 503s. Never treat an HTTP 422 with <code>"ok":false</code> as transient: that is your method's own answer, recorded like a success. The <a href="../guides/errors-retries.html">client guide</a> lists every case, and <code>flower-client</code> implements this policy for you.</p>
+
+<h2 id="how-long">How long receipts last</h2>
+
+<p>Every database served by <code>cargo flower serve</code> gets a <strong>retry window</strong>, by default 24 hours (<code>--retry-window-ms</code>). Receipts are grouped into epochs of one eighth of the window, and nine epochs are kept, so a write stays retryable for at least the window and at most one eighth longer — 24 to 27 hours by default — before the leader collects its receipt. Operators can change a database's retention with <code>cargo flower retention</code>: the epoch length, how many epochs to keep, and a byte budget beyond which new writes are refused with <code>receipt_budget_exceeded</code> rather than evicting anything.</p>
+
+<p>A retry with a key whose receipt has been collected runs again as a new write. Design for the window: a client that might retry after a day needs its own deduplication.</p>
+
+<h2 id="scoped-ids">Scoped request IDs</h2>
+
+<p>Two kinds of ID give stronger guarantees than a plain key. Both are minted from the database's current <em>retry identity</em>, which <code>GET /v1/retry?db=…</code> returns and <code>cargo flower retry --db …</code> prints:</p>
+
+<ul>
+  <li><strong><code>f1:</code> IDs</strong> are derived from a business intent: <code>f1:&lt;incarnation&gt;:&lt;epoch&gt;:&lt;sha-256 of the intent&gt;</code>. Their receipt pins the module, alias, canonical arguments and expected revision, so the same ID with different content is refused with <code>identity_conflict</code>. Mint one with <code>cargo flower retry --db D id --intent order:42</code> or <code>client.retry_identity(db)</code> and <code>RetryIdentity::request_id(intent)</code>.</li>
+  <li><strong><code>f2:</code> IDs</strong> belong to a <strong>retry session</strong>: a numbered sequence of writes a client opens, acknowledges as it learns their outcomes, and closes. The server can then release acknowledged receipts early, and refuses IDs older than what was acknowledged (<code>already_acknowledged</code>). Sessions are for clients that issue many writes and track them, such as a device draining an offline queue.</li>
+</ul>
+
+<p>Scoped IDs are tied to the database's history. After a <a href="../guides/backups.html">restore</a> to an earlier point, the database starts a new history, and IDs minted before it are refused with <code>wrong_history</code> rather than silently replayed or re-run. Plain keys survive restores and partition moves.</p>
+
+<h2 id="refusals">Refusals a receipt can decide</h2>
+
+<table>
+  <thead><tr><th>Code</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td><code>identity_conflict</code></td><td>The key belongs to another principal, or a scoped ID was reused for different content.</td></tr>
+    <tr><td><code>epoch_retired</code> / <code>epoch_not_admitted</code></td><td>The scoped ID's epoch is older than the oldest kept, or from the future.</td></tr>
+    <tr><td><code>wrong_history</code></td><td>The scoped ID was minted in another history of the database (before a restore).</td></tr>
+    <tr><td><code>receipt_released</code></td><td>The receipt was released by a retry session acknowledgement.</td></tr>
+    <tr><td><code>retry_session_unknown</code>, <code>retry_session_closed</code>, <code>retry_session_forbidden</code>, <code>already_acknowledged</code>, <code>retry_ack_gap</code></td><td>Retry-session states.</td></tr>
+    <tr><td><code>receipt_budget_exceeded</code></td><td>The database's receipt budget is full.</td></tr>
+  </tbody>
+</table>
+
+<p>These are answered like a call's own failure — HTTP 422 with <code>"ok":false</code> — and are not duplicates:</p>
+
+<pre><code class="language-json">{"ok":false,"revision":7,"position":0,"code":"identity_conflict","message":"retry identity reused with a different intent","duplicate":false}</code></pre>

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80" fill="none" stroke="#222" stroke-width="2.5">
+  <style>@media(prefers-color-scheme:dark){svg{stroke:#eee}}</style>
+  <ellipse cx="40" cy="25" rx="10" ry="18"/>
+  <ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(60 40 40)"/>
+  <ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(120 40 40)"/>
+  <ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(180 40 40)"/>
+  <ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(240 40 40)"/>
+  <ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(300 40 40)"/>
+</svg>

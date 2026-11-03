@@ -1,0 +1,12 @@
+**/target
+.git
+.github
+.flower
+.direnv
+result
+result-*
+**/__pycache__
+web
+scripts
+*.log
+data

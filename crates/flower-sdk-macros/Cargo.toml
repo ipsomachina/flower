@@ -1,0 +1,20 @@
+[package]
+name = "flower-sdk-macros"
+version = "0.0.20261105"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Derives and adapters for Flower guest applications"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = { version = "2", features = ["derive", "extra-traits", "full", "parsing", "printing", "proc-macro"] }
+quote = "1"
+proc-macro2 = "1"
+
+[lints]
+workspace = true

@@ -1,0 +1,60 @@
+[package]
+name = "flower-cluster"
+version = "0.0.20261105"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Flower replication layer: Raft ordering, sync serving and intent intake over the engine core"
+
+[dependencies]
+flower-protocol = { version = "0.0.20261105", path = "../flower-protocol" }
+flower-engine = { version = "0.0.20261105", path = "../flower-engine" }
+flower-crypto = { version = "0.0.20261105", path = "../flower-crypto" }
+flower-sdk = { version = "0.0.20261105", path = "../flower-sdk" }
+openraft = { package = "flower-openraft", version = "=0.9.25-flower.1", default-features = false, features = ["serde", "storage-v2", "loosen-follower-log-revert"] }
+# Raft log, vote and snapshot pages live in their own file outside the
+# engine's ten-table layout: different write patterns, independent
+# compaction, and the group file stays exactly the ten tables. The same
+# requirement as flower-engine's, so both take the vendored fork.
+redb = { package = "flower-redb", version = "=4.4.0-flower.1" }
+# `fs`: snapshot images are files that OpenRaft streams segment by segment.
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "net", "io-util", "fs"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Leader-chosen queue claim tokens.
+rand = "0.9"
+# Peer TLS: rustls with the AWS-LC provider (needs clang to build on Windows
+# ARM64), and private key bytes wiped once loaded.
+tokio-rustls = { version = "0.26.5", default-features = false, features = ["aws-lc-rs", "tls12"] }
+zeroize = "1"
+tracing = "0.1"
+# Per-method costs: rows published for lock-free reads (see `methods`).
+arc-swap = "1"
+foldhash = "0.2"
+# OpenTelemetry instruments and span links of the writer, evaluator, storage,
+# Raft and queries: the API only, each instrument bound to its attributes
+# once; the server installs the SDK and the exporters. Off, a recording site
+# costs one atomic load.
+opentelemetry = { version = "0.33", default-features = false, features = ["trace", "metrics", "experimental_metrics_bound_instruments"] }
+tracing-opentelemetry = { version = "0.34", default-features = false }
+
+# The evaluating thread's CPU time, for per-method costs; free disk
+# space before a failed member exits (`health`); the boot a
+# `FLOWER_FSYNC=off` marker names (`fsync`: macOS's boot session UUID,
+# Windows's boot time).
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Threading", "Win32_Storage_FileSystem", "Wdk_System_SystemInformation"] }
+
+[dev-dependencies]
+# `test-util`: admission and deadline tests run on paused time.
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "net", "io-util", "test-util"] }
+tempfile = "3"
+flower-backup = { path = "../flower-backup" }
+
+[lints]
+workspace = true

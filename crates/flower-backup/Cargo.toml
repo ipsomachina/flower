@@ -1,0 +1,41 @@
+[package]
+name = "flower-backup"
+version = "0.0.20261105"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Flower continuous backup: encrypted snapshots, retention and restore over object storage"
+
+[features]
+default = []
+s3 = ["object_store/aws"]
+
+[dependencies]
+flower-crypto = { version = "0.0.20261105", path = "../flower-crypto" }
+flower-cluster = { version = "0.0.20261105", path = "../flower-cluster" }
+flower-engine = { version = "0.0.20261105", path = "../flower-engine" }
+flower-sdk = { version = "0.0.20261105", path = "../flower-sdk" }
+openraft = { package = "flower-openraft", version = "=0.9.25-flower.1", default-features = false, features = ["serde", "storage-v2", "loosen-follower-log-revert"] }
+object_store = "0.14"
+bytes = "1"
+rand = "0.8"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
+futures = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+zstd = "0.13"
+tracing = "0.1"
+tempfile = "3"
+
+[dev-dependencies]
+s3s = "0.17"
+s3s-fs = "0.17"
+hyper = { version = "1", features = ["server", "http1"] }
+hyper-util = { version = "0.1", features = ["server-auto", "service", "tokio"] }
+tokio = { version = "1", features = ["net"] }
+async-trait = "0.1"
+
+[lints]
+workspace = true

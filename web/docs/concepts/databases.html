@@ -1,0 +1,80 @@
+<h1>Databases, modules and groups</h1>
+<p class="lede">Every call names a logical database and a module. Logical databases are the unit of atomicity; modules are namespaces of code inside them; Raft groups are where databases physically live.</p>
+
+<h2 id="logical-databases">Logical databases</h2>
+
+<p>A <strong>logical database</strong> is an atomic application-state domain. It holds source records, indexes and derived values, the deployed code of its modules, its timers, queues and retry receipts, its catalog of <a href="../guides/crypto.html#managed-keys">managed keys</a>, and one <strong>revision</strong> counter that moves with each committed change. Every HTTP call carries its name in <code>db</code>; every <code>cargo flower</code> command that touches application state takes <code>--db</code>.</p>
+
+<p>You do not create databases explicitly. A database comes into being the first time you <a href="../guides/deployments.html">deploy</a> a module into it. Names are yours to choose: one database per application, per environment, or per tenant are all reasonable.</p>
+
+<p>A mutation is atomic within its database. Work spanning several databases goes through a <a href="transactions.html">transaction</a>, which is atomic across all of them.</p>
+
+<h2 id="modules">Modules</h2>
+
+<p>A <strong>module</strong> is one deployed Wasm artifact inside a database, under a name you choose at deploy time. The same artifact can be deployed under several names, or into several databases. Each module has its own collections, methods, derived values and HTTP names; a collection called <code>tasks</code> in module <code>crm</code> is unrelated to one called <code>tasks</code> in module <code>jobs</code>.</p>
+
+<p>Modules share their database's revision and commit atomically with each other: a mutation in one module that calls an exported mutation in another commits both modules' writes in one entry. They are capability boundaries, not consensus domains. A module exports nothing unless its declarations say so (<a href="modules.html#exports"><code>export</code></a>); other modules reach it only through what it exports, and clients only through what it declares <code>http</code>.</p>
+
+<p>The module named <code>""</code> (the empty string) is the database's <em>host module</em>. Inside guest code, <code>""</code> also means "the calling module" wherever a module name is expected, so <code>CollectionRef::local("tasks")</code> is <code>CollectionRef::new("", "tasks")</code>.</p>
+
+<h2 id="named-partitions-and-groups">Named partitions and groups</h2>
+
+<p>A server process can host several <strong>Raft groups</strong>. Each group has one ordered log and one leader at a time. The <code>root</code> group exists from bootstrap; it spans every server process and holds the partition catalog. Every database the catalog does not place lives in <code>root</code>.</p>
+
+<p>An operator can create more groups on a subset of the servers, and <strong>place</strong> a database on one of them, which makes it a <strong>named partition</strong>. A partition is still addressed by its database name: clients never name groups. The server that receives a call looks the database up in the catalog and routes the call to the group that owns it, forwarding to that group's leader when needed. Responses for placed databases carry <code>x-flower-group</code> and <code>x-flower-partition-epoch</code> headers so you can see where a call ran.</p>
+
+<figure class="diagram">
+<svg viewBox="0 0 680 230" width="680" height="230" role="img" aria-labelledby="groups-title">
+  <title id="groups-title">Three servers host the root group; two of them also host group east, which owns the partition acme.</title>
+  <g fill="none" stroke="currentColor" stroke-width="1.2">
+    <rect x="10" y="20" width="200" height="190"/>
+    <rect x="240" y="20" width="200" height="190"/>
+    <rect x="470" y="20" width="200" height="190"/>
+    <rect x="25" y="60" width="170" height="60"/>
+    <rect x="255" y="60" width="170" height="60"/>
+    <rect x="485" y="60" width="170" height="60"/>
+    <rect x="255" y="135" width="170" height="60" stroke-dasharray="4 3"/>
+    <rect x="485" y="135" width="170" height="60" stroke-dasharray="4 3"/>
+  </g>
+  <g fill="currentColor" font-size="13" text-anchor="middle">
+    <text x="110" y="44">Server 1</text>
+    <text x="340" y="44">Server 2</text>
+    <text x="570" y="44">Server 3</text>
+    <text x="110" y="86">root group</text>
+    <text x="110" y="104" font-size="11" font-style="italic">catalog, unplaced databases</text>
+    <text x="340" y="86">root group</text>
+    <text x="340" y="104" font-size="11" font-style="italic">replica</text>
+    <text x="570" y="86">root group</text>
+    <text x="570" y="104" font-size="11" font-style="italic">replica</text>
+    <text x="340" y="161">group east</text>
+    <text x="340" y="179" font-size="11" font-style="italic">partition acme</text>
+    <text x="570" y="161">group east</text>
+    <text x="570" y="179" font-size="11" font-style="italic">partition acme</text>
+  </g>
+</svg>
+<figcaption>Groups are replicated independently. A call naming <code>acme</code> reaches group east from any server.</figcaption>
+</figure>
+
+<p>Placement is an explicit decision, made with <code>cargo flower group create</code> and <code>cargo flower partition create</code>; Flower does not split or rebalance data on its own. Placing an existing database adopts it in place. A partition can be <strong>moved</strong> to another group while it serves: rows, code, revisions, receipts, timers and queues travel with it, and retry identities stay valid. During the brief freeze at cutover, calls answer a retryable <code>503 partition_moving</code>. See <a href="../guides/operations.html#groups-and-partitions">Operating a cluster</a>.</p>
+
+<div class="callout">
+<p><span class="callout-title">Tenants are not partitions</span> A key containing a <code>tenant_id</code> does not create a partition, and several application tenants can share one database if your access rules keep them apart. Giving a tenant its own database — and possibly its own group — is a choice you make when you deploy.</p>
+</div>
+
+<h2 id="replicas">Replicas, leaders and followers</h2>
+
+<p>Each member of a group keeps a full copy of the group's databases. The leader runs mutations and appends their accepted consequences to the log; followers apply those consequences without running guest code. Any member answers queries, according to the consistency each query declares (see <a href="consistency.html">Revisions and consistency</a>), and any member accepts writes, forwarding them to the leader.</p>
+
+<h2 id="identities">Identities worth knowing</h2>
+
+<table>
+  <thead><tr><th>Identity</th><th>What it identifies</th><th>Where you meet it</th></tr></thead>
+  <tbody>
+    <tr><td>Database name</td><td>The owner of application state and the target of every call.</td><td><code>db</code> in every request.</td></tr>
+    <tr><td>Revision</td><td>A per-database counter that moves with each committed change. Not comparable across databases.</td><td>Mutation results, watch events.</td></tr>
+    <tr><td>Position</td><td>The log index of the entry in the owning group's log. Restarts after a restore.</td><td>Mutation and transaction results.</td></tr>
+    <tr><td>History incarnation</td><td>One unbroken history of a database. A restore to an earlier point starts a new one.</td><td>Scoped retry IDs, <code>wrong_history</code> refusals.</td></tr>
+    <tr><td>Placement epoch</td><td>Which group currently owns a partition.</td><td><code>x-flower-partition-epoch</code>.</td></tr>
+    <tr><td>Code identity</td><td>The SHA-256 content identity of a module's Wasm and manifest (with its bindings).</td><td><code>cargo flower build</code>, <code>plan</code> and <code>modules</code>.</td></tr>
+  </tbody>
+</table>

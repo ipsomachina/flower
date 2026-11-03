@@ -1,0 +1,9 @@
+/target
+/target-check
+__pycache__/
+/.direnv/
+/.claude/worktrees/
+/result
+/result-*
+/web/node_modules/
+/web/_site/

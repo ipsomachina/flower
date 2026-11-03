@@ -1,0 +1,19 @@
+[package]
+license.workspace = true
+name = "doc-snippets"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lib]
+# rlib too: the client examples and tests link it natively.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+flower-sdk = { path = "../../../../crates/flower-sdk" }
+
+# Deploy every snippet's App into the real engine, natively.
+[dev-dependencies]
+flower-engine = { path = "../../../../crates/flower-engine" }
+flower-sdk = { path = "../../../../crates/flower-sdk", features = ["native-host"] }

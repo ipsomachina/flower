@@ -1,0 +1,100 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/flower-sdk",
+    "crates/flower-sql",
+    "crates/flower-protocol",
+    "crates/flower-sdk-macros",
+    "crates/flower-engine",
+    "crates/flower-cluster",
+    "crates/flower-crypto",
+    "crates/flower-backup",
+    "crates/flower-server",
+    "crates/flower-client",
+    "crates/cargo-flower",
+    "crates/flower-guest-test",
+    "crates/flower-guest-crypto",
+    "crates/flower-worker",
+    "crates/flower-bench",
+    # Example guests: built for the host by the gates, and for wasm32 by the
+    # tests that deploy them.
+    "examples/external-transactions",
+    "examples/crypto-ticket",
+    "examples/goblin-pizza",
+    "examples/typed-modules-contract",
+    "examples/typed-modules-provider",
+    "examples/typed-modules-consumer",
+    "examples/sql-queries",
+]
+# Vendored dependency forks are patches, not members: the workspace lint
+# gate and test run cover Flower's own crates only.
+exclude = ["vendor/redb", "vendor/openraft"]
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.96"
+license = "MIT"
+repository = "https://github.com/ipsomachina/flower"
+homepage = "https://flower.ipsomachina.com"
+
+# Shared lint policy: every crate opts in with `[lints] workspace = true`.
+# The gate is `cargo clippy --workspace --all-targets -- -D warnings`.
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+
+[workspace.lints.clippy]
+undocumented_unsafe_blocks = "warn"
+dbg_macro = "warn"
+todo = "warn"
+
+# Debug builds keep line tables only: panics and backtraces still name
+# file and line, but a debugger shows no locals or types. Every test
+# binary carries its own copy of every dependency's debug info: with
+# full debug info `cargo test --workspace --no-run` left 42.6 GB in
+# target/debug (25 GB of PDBs, 12 GB incremental) and took 614 s; with
+# line tables, 14.9 GB in 296 s. `cargo test` builds use this profile.
+[profile.dev]
+debug = "line-tables-only"
+
+# Wasm compilation in dev builds. Unoptimized Cranelift compiles a guest
+# about ten times slower: a debug `serve` took 9 s to deploy the 200 KB
+# release test guest (20 s for the 2.3 MB debug one, the client's whole
+# attempt timeout), since a deployment compiles the module on the leader
+# to validate it and again where it applies; optimized, 0.7 s (1.7 s).
+# Only the compiler and the module loader are optimized, so Flower's own
+# crates keep fast incremental debug builds.
+[profile.dev.package.cranelift-codegen]
+opt-level = 3
+[profile.dev.package.cranelift-frontend]
+opt-level = 3
+[profile.dev.package.cranelift-entity]
+opt-level = 3
+[profile.dev.package.cranelift-bforest]
+opt-level = 3
+[profile.dev.package.cranelift-bitset]
+opt-level = 3
+[profile.dev.package.cranelift-control]
+opt-level = 3
+[profile.dev.package.cranelift-native]
+opt-level = 3
+[profile.dev.package.regalloc2]
+opt-level = 3
+[profile.dev.package.wasmparser]
+opt-level = 3
+[profile.dev.package.wasmtime]
+opt-level = 3
+[profile.dev.package.wasmtime-environ]
+opt-level = 3
+[profile.dev.package.wasmtime-internal-cranelift]
+opt-level = 3
+[profile.dev.package.wasmtime-internal-core]
+opt-level = 3
+[profile.dev.package.gimli]
+opt-level = 3
+[profile.dev.package.object]
+opt-level = 3
+
+# Local copies of the same named forks that registry consumers install.
+[patch.crates-io]
+flower-openraft = { path = "vendor/openraft" }
+flower-redb = { path = "vendor/redb" }

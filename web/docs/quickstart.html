@@ -1,0 +1,179 @@
+<h1>Quickstart</h1>
+<p class="lede">Build a to-do module in Rust, serve it on a one-node cluster, and call it over HTTP. Every command and output on this page was run against the current Flower code.</p>
+
+<h2 id="prerequisites">Prerequisites</h2>
+
+<ul>
+  <li><strong>Rust 1.96 or newer</strong> with the WebAssembly target: <code>rustup target add wasm32-unknown-unknown</code>.</li>
+  <li><strong>A C compiler</strong>, for the zstd codec the server links. On Windows on ARM64, also install LLVM (<code>winget install LLVM.LLVM</code>) and put its <code>bin</code> directory on <code>PATH</code> before building: the TLS library's assembly needs <code>clang</code>.</li>
+  <li><strong>A checkout of the Flower repository.</strong> The crates are not published to crates.io; your guest depends on <code>flower-sdk</code> by path.</li>
+</ul>
+
+<h2 id="install">1. Install <code>cargo flower</code></h2>
+
+<p>From the root of the Flower checkout:</p>
+
+<pre><code class="language-bash">cargo install --path crates/cargo-flower</code></pre>
+
+<p>This installs the <code>cargo-flower</code> binary, which Cargo runs as <code>cargo flower</code>. The same binary builds guests, deploys them, calls them and serves cluster nodes. A release build takes a few minutes the first time: it compiles the whole server, including the Wasm compiler.</p>
+
+<h2 id="write-a-module">2. Write a module</h2>
+
+<p>Create a library crate next to your Flower checkout:</p>
+
+<pre><code class="language-bash">cargo new --lib tasks
+cd tasks</code></pre>
+
+<p>A guest is a <code>cdylib</code> that depends on <code>flower-sdk</code> and nothing else. Building it as an <code>rlib</code> too lets tests and Rust clients link its types:</p>
+
+<figure class="code">
+<figcaption>Cargo.toml</figcaption>
+<pre><code class="language-toml">[package]
+name = "tasks"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+flower-sdk = { path = "../flower/crates/flower-sdk" }</code></pre>
+</figure>
+
+<p>Replace <code>src/lib.rs</code> with the module. It declares a <code>tasks</code> collection indexed by whether a task is done, two mutations and one query, all three callable over HTTP:</p>
+
+<figure class="code">
+<figcaption>src/lib.rs</figcaption>
+<pre><code class="language-rust" data-include="examples/quickstart/src/lib.rs"></code></pre>
+</figure>
+
+<p>A few things to notice:</p>
+
+<ul>
+  <li><code>#[derive(FlowerType)]</code> gives <code>Task</code> a schema and a codec. The wire names are the Rust field names.</li>
+  <li><code>#[collection]</code> turns the <code>Tasks</code> marker into the collection's typed handle — <code>get</code>, <code>set</code> and <code>delete</code> by key, and a typed <code>BY_DONE</code> index handle — and into the component the app lists. Keys are values of the declared key type: <code>Tasks::get(ctx, &amp;id)</code> takes the <code>String</code> itself.</li>
+  <li><code>#[mutation]</code> and <code>#[query]</code> keep the function and declare the operation: a static named after the function in upper case (<code>ADD_TASK</code>) and a public argument struct (<code>AddTaskArgs</code>) whose fields are the parameters after <code>ctx</code>. The JSON arguments object has those fields.</li>
+  <li>Nothing answers over HTTP unless its declaration says <code>http</code>. The method's name is its HTTP name; <code>#[mutation(name = "tasks.add", http)]</code> picks another.</li>
+  <li><code>App::new</code> takes one flat list of components: collections, methods, and later queues, keys or an authorization hook. <code>export!(APP)</code> emits the Wasm exports the server calls.</li>
+</ul>
+
+<h2 id="build">3. Build it</h2>
+
+<pre><code class="language-bash">cargo flower build</code></pre>
+
+<pre><code class="language-console">built tasks wasm=.flower/tasks.wasm manifest=.flower/tasks.manifest.json sha256=f3eca4e1f4e308ced6fd1684a06156c19a6664e6364c58cd8c168bd590d2fee8
+collections=1 queries=1 mutations=2 derived=0 transactions=0 triggers=0 http=3</code></pre>
+
+<p><code>build</code> compiles the crate for <code>wasm32-unknown-unknown</code> in release mode, then loads the result through the same Wasm backend the server uses and checks its imports, exports and manifest. Nothing is written unless that inspection passes. The manifest — collections, schemas, methods and the names callable over HTTP (<code>aliases</code>) — is embedded in the module; the <code>.manifest.json</code> copy is for you to read and diff.</p>
+
+<h2 id="serve">4. Start a node</h2>
+
+<p>In a second terminal:</p>
+
+<pre><code class="language-bash">cargo flower serve --dir data --id 1 --bootstrap 1 --admin-token secret</code></pre>
+
+<pre><code class="language-console">listening raft=127.0.0.1:9000
+listening http=127.0.0.1:8080</code></pre>
+
+<ul>
+  <li><code>--dir</code> is where the node keeps its data; <code>--id</code> is its member ID.</li>
+  <li><code>--bootstrap 1</code> founds a new one-member cluster on first start. It is ignored once the directory is initialized, so restarting with the same command is safe.</li>
+  <li><code>--admin-token</code> enables the operator endpoints, deployment included. Without it every admin request is refused with 403.</li>
+</ul>
+
+<p>The node serves HTTP/1.1 and HTTP/2 on port 8080 and Raft on port 9000, both on loopback. It logs at <code>info</code>; set <code>RUST_LOG=warn</code> for a quieter terminal. Check that it elected itself:</p>
+
+<pre><code class="language-bash">cargo flower status</code></pre>
+
+<pre><code class="language-console">id=1 state=Leader leader=Some(1) term=1 last_log=Some(2) last_applied=Some(2)</code></pre>
+
+<p>Client commands talk to <code>http://127.0.0.1:8080</code> unless you pass <code>--endpoint</code> or set <code>FLOWER_ENDPOINT</code>.</p>
+
+<h2 id="deploy">5. Deploy</h2>
+
+<pre><code class="language-bash">cargo flower deploy --db demo --module tasks --wasm .flower/tasks.wasm --admin-token secret</code></pre>
+
+<pre><code class="language-console">revision=0 position=3</code></pre>
+
+<p>This creates the database <code>demo</code> and deploys the artifact into it as the module <code>tasks</code>. The deployment went through the Raft log (position 3); it did not move the database's revision, which counts data changes. You could deploy the same file again as another module, or into another database.</p>
+
+<h2 id="call">6. Call it</h2>
+
+<p>Mutations go to <code>POST /v1/mutate</code>; the body names the database, module, method and arguments:</p>
+
+<pre><code class="language-bash">curl -s http://127.0.0.1:8080/v1/mutate -H 'content-type: application/json' \
+  -d '{"db":"demo","module":"tasks","name":"add_task","args":{"id":"milk","title":"Buy milk"},"idempotency_key":"add-milk"}'</code></pre>
+
+<pre><code class="language-json">{"ok":true,"value":{"done":false,"title":"Buy milk"},"revision":1,"position":4,"duplicate":false}</code></pre>
+
+<p>The answer carries the method's return value, the database revision the write produced, and the log position it committed at. Send exactly the same request again:</p>
+
+<pre><code class="language-json">{"ok":true,"value":{"done":false,"title":"Buy milk"},"revision":1,"position":4,"duplicate":true}</code></pre>
+
+<p>Because the request carried an <code>idempotency_key</code>, the server recognized the retry and answered the original outcome instead of running <code>add_task</code> again — note <code>"duplicate":true</code> and the unchanged revision. Without a key, the second call would run and fail with the module's own error:</p>
+
+<pre><code class="language-http">HTTP/1.1 422 Unprocessable Entity
+
+{"ok":false,"revision":1,"position":5,"code":"TASK_EXISTS","message":"a task with this ID already exists","duplicate":false}</code></pre>
+
+<p>A method's own failure answers 422, with <code>"ok":false</code> and your code and message. Nothing it wrote was kept and the revision did not move; the log entry at position 5 records only the failed outcome. See <a href="concepts/retries.html">Retries and receipts</a> for how long Flower remembers keys.</p>
+
+<p>Add a second task the same way, with <code>{"id":"bread","title":"Bake bread"}</code>. Queries go to <code>POST /v1/query</code>:</p>
+
+<pre><code class="language-bash">curl -si http://127.0.0.1:8080/v1/query -H 'content-type: application/json' \
+  -d '{"db":"demo","module":"tasks","name":"open_tasks","args":{}}'</code></pre>
+
+<pre><code class="language-http">HTTP/1.1 200 OK
+content-type: application/json
+x-flower-leader-url: http://127.0.0.1:8080
+server-timing: cache;desc=miss, fence;dur=0.3, admission;dur=0.0, eval;dur=1.0, total;dur=1.5, node;desc=1, leader;desc=1
+x-flower-group: root
+
+{"ok":true,"value":[{"id":"milk","title":"Buy milk"},{"id":"bread","title":"Bake bread"}]}</code></pre>
+
+<p>A query answer carries only the value. <code>Server-Timing</code> breaks the request down into phases — here a result-cache miss, the fence that proved the read fresh, and the evaluation — and you can read it in your browser's network panel. See the <a href="reference/http.html#server-timing">HTTP reference</a>.</p>
+
+<p>The CLI can make the same calls. <code>--mutation</code> selects <code>/v1/mutate</code>:</p>
+
+<pre><code class="language-bash">cargo flower call --db demo --module tasks --name complete_task --args '{"id":"milk"}' --mutation</code></pre>
+
+<pre><code class="language-console">{"done":true,"title":"Buy milk"}
+revision=3 position=7 duplicate=false</code></pre>
+
+<h2 id="watch">7. Watch a query</h2>
+
+<p>A watch keeps a query's result current over server-sent events. <code>POST /v1/watch</code> takes exactly the body of <code>/v1/query</code>:</p>
+
+<pre><code class="language-bash">curl -sN http://127.0.0.1:8080/v1/watch -H 'content-type: application/json' \
+  -d '{"db":"demo","module":"tasks","name":"open_tasks","args":{}}'</code></pre>
+
+<p>Leave it running and, in another terminal, add a task and complete one. Each change that alters the query's result produces a new snapshot:</p>
+
+<pre><code class="language-sse">event: snapshot
+data: {"revision":3,"id":1,"value":[{"id":"bread","title":"Bake bread"}]}
+
+event: snapshot
+data: {"revision":4,"id":3,"value":[{"id":"eggs","title":"Buy eggs"},{"id":"bread","title":"Bake bread"}]}
+
+event: snapshot
+data: {"revision":5,"id":4,"value":[{"id":"eggs","title":"Buy eggs"}]}</code></pre>
+
+<p>Add <code>"deltas":true</code> to the body to receive JSON Patch events instead, whenever a patch is smaller than the value:</p>
+
+<pre><code class="language-sse">event: patch
+data: {"revision":4,"id":3,"base":2,"patch":[{"op":"add","path":"/0","value":{"id":"eggs","title":"Buy eggs"}}]}</code></pre>
+
+<p>The engine knows which index range <code>open_tasks</code> read, so writes that cannot change its result never wake the watch. See <a href="concepts/watches.html">Watches</a>.</p>
+
+<h2 id="next-steps">Next steps</h2>
+
+<ul>
+  <li>Open <code>http://127.0.0.1:8080/admin</code> and paste the admin token to see the node's dashboard: Raft state, databases, queues, deployments and live activity.</li>
+  <li>Read <a href="concepts/collections.html">Collections and indexes</a> and <a href="concepts/methods.html">Queries and mutations</a> to go beyond this module.</li>
+  <li>Call the module from Rust with <a href="guides/rust-client.html"><code>flower-client</code></a>, through the descriptors <code>#[mutation]</code> and <code>#[query]</code> declared, and <a href="guides/testing.html">test it in-process</a> without building Wasm.</li>
+  <li>Run three nodes instead of one: <a href="guides/operations.html#a-three-node-cluster">Operating a cluster</a>.</li>
+</ul>
+
+<div class="callout tip">
+<p><span class="callout-title">Compiled examples</span> The module on this page, and every other example in these docs, lives in <code>web/docs/examples</code> of the Flower repository, where it is compiled against the current SDK and its apps are deployed into the engine by tests. <code>web/docs/README.md</code> has the commands.</p>
+</div>

@@ -1,0 +1,14 @@
+{
+  "name": "flower-web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "bun --bun run buildawesome --config=buildawesome.config.js",
+    "dev": "bun --bun run buildawesome --config=buildawesome.config.js --serve",
+    "test": "bun test ./tools",
+    "check": "bun run build && bun run test && bun docs/tools/check-protocol.mjs"
+  },
+  "devDependencies": {
+    "@awesome.me/buildawesome": "4.0.0-alpha.10"
+  }
+}
