@@ -1,0 +1,24 @@
+# The documentation's code, compiled. Not a member of the Flower
+# workspace. From the repository root:
+#
+#   cargo clippy --manifest-path web/docs/examples/Cargo.toml -p tasks -p doc-snippets --target wasm32-unknown-unknown -- -D warnings
+#   cargo clippy --manifest-path web/docs/examples/Cargo.toml --all-targets -- -D warnings
+#   cargo test   --manifest-path web/docs/examples/Cargo.toml
+#
+# `quickstart` is the quickstart's guest crate as printed there (save for
+# the path to flower-sdk), with the testing guide's in-process test;
+# `snippets` holds the other guest examples, and `client` the native
+# client and worker examples, which call the guests through their typed
+# descriptors.
+[workspace]
+resolver = "2"
+members = ["quickstart", "snippets", "client"]
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.96"
+license = "MIT"
+
+# Local copies of the published dependency forks.
+[patch.crates-io]
+flower-redb = { path = "../../../vendor/redb" }

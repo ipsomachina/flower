@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <meta name="description" content="Build applications that stay in sync. Flower combines transactional data, reactive computations, live queries and durable workflows. Open source under MIT.">
+    <title>Flower — Build applications that stay in sync</title>
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://flower.ipsomachina.com/">
+    <meta property="og:title" content="Flower — Build applications that stay in sync">
+    <meta property="og:description" content="Store the facts. Keep their consequences in sync. Transactional data, reactive computations, live queries, and durable workflows — with Rust application logic, open source under MIT.">
+    <meta property="og:image" content="https://flower.ipsomachina.com/social.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:image:alt" content="Flower logo on a white background">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <div class="page">
+      <header>
+        <svg class="flower" viewBox="0 0 80 80" width="64" height="64" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+          <ellipse cx="40" cy="25" rx="10" ry="18"/>
+          <ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(60 40 40)"/>
+          <ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(120 40 40)"/>
+          <ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(180 40 40)"/>
+          <ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(240 40 40)"/>
+          <ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(300 40 40)"/>
+        </svg>
+        <h1>FLOWER</h1>
+        <p class="subtitle">The database with your application built in.</p>
+      </header>
+      <main>
+        <p class="introduction">Build applications that stay in sync.</p>
+        <p>An order changes. Totals update. A dashboard refreshes. A delivery job becomes ready. Flower gives those moving parts a common foundation: transactional records, reactive computations, live queries, and durable workflows in one replicated engine.</p>
+        <p>Write your application logic in Rust. Define what changes and what depends on it. Flower tracks the connections and keeps the resulting state coherent.</p>
+        <nav class="actions" aria-label="Get started with Flower">
+          <a class="primary" href="docs/quickstart.html">Build your first module →</a>
+          <a href="docs/index.html">Explore the docs</a>
+          <a href="https://github.com/ipsomachina/flower">Flower on GitHub</a>
+        </nav>
+        <p>Flower is open source under the <a href="LICENSE">MIT license</a>. Build with it, modify it, and ship it.</p>
+        <section aria-labelledby="state-heading">
+          <h2 id="state-heading">Store the facts. Keep the consequences correct.</h2>
+          <p>Define a customer’s balance, an order summary, or an inventory total as a computation over your data. Flower tracks what it reads and invalidates cached results when those dependencies change. Mutations publish source changes, indexes, and required derived values atomically; queries see one coherent snapshot.</p>
+          <p><a href="docs/concepts/derived.html">See how reactive state works →</a></p>
+        </section>
+        <section aria-labelledby="live-heading">
+          <h2 id="live-heading">Turn a query into a live view.</h2>
+          <p>The same query that answers a request can power a live dashboard. Subscribe to its result and receive fresh snapshots as its dependencies change. Authorization is checked on delivery, and reconnecting clients get a fresh view.</p>
+          <p><a href="docs/concepts/watches.html">Build with live queries →</a></p>
+        </section>
+        <section aria-labelledby="rust-heading">
+          <h2 id="rust-heading">Your types, all the way to the client.</h2>
+          <p>Declare collections, queries, mutations, and errors in Rust. Run application logic in isolated WebAssembly guests. Share interface contracts with native clients and generate methods that carry your argument, result, and error types through the call.</p>
+          <p><a href="docs/guides/rust-client.html">Meet the Rust client →</a></p>
+        </section>
+        <section aria-labelledby="sql-heading">
+          <h2 id="sql-heading">Reach for SQL when it fits.</h2>
+          <p>Use a typed, deployment-checked SQL plan for a query you know, or expose a scoped endpoint for request-time statements. Read-only SQL runs through ordinary module queries, with the same snapshot, access policies, and explicit resource budgets. Explain shows the access path before you read the rows.</p>
+          <p><a href="docs/guides/sql.html">Explore SQL support →</a></p>
+        </section>
+        <section aria-labelledby="work-heading">
+          <h2 id="work-heading">Give background work a durable home.</h2>
+          <p>Schedule a timer, enqueue a job, and let a native Rust worker handle the outside world. Durable queues, renewable leases, and fencing make ownership explicit. Persisted commands keep their identity through retries, and the client preserves uncertain outcomes so your application can recover deliberately.</p>
+          <p><a href="docs/guides/workers.html">Put workers to work →</a></p>
+        </section>
+        <section aria-labelledby="replication-heading">
+          <h2 id="replication-heading">A serious foundation beneath the convenience.</h2>
+          <p>The engine validates tracked reads and writes before accepting a mutation. Raft replicates accepted changes and results; followers apply those consequences without rerunning your callbacks. Staged deployments, encrypted backups, and restore tooling support the application beyond its first successful request.</p>
+          <p><a href="docs/guides/operations.html">Look inside the operational model →</a></p>
+        </section>
+        <section aria-labelledby="start-heading">
+          <h2 id="start-heading">Start small. Follow the possibilities.</h2>
+          <p>The <a href="docs/quickstart.html">quickstart</a> walks through a working Rust module, a local server, and your first calls. The <a href="docs/index.html">documentation</a> takes you from there into live queries, authorization, workers, SQL, and cluster operations, with compiled Rust examples.</p>
+        </section>
+        <section id="availability" aria-labelledby="availability-heading">
+          <h2 id="availability-heading">Built at Ipso Machina. Open to everyone.</h2>
+          <p>We’re building Flower for our own applications. Explore the source, examples, and development on <a href="https://github.com/ipsomachina/flower">GitHub</a>, or start building with the <a href="docs/index.html">documentation</a>.</p>
+          <p>The <a href="LICENSE">MIT license</a> lets you use Flower in personal and commercial projects, modify it, and redistribute it. Explore the code, try the examples, and make it yours. For questions and ideas, <a href="mailto:contact@ipsomachina.com">get in touch</a>.</p>
+          <p>Bundled dependencies and the <a href="fonts/OFL.txt">Bodoni Moda font</a> retain their original licenses.</p>
+        </section>
+      </main>
+      <footer>
+        <p><a href="docs/index.html">Documentation</a> · <a href="https://github.com/ipsomachina/flower">GitHub</a> · <a href="LICENSE">MIT license</a> · <a href="https://ipsomachina.com/privacy">Privacy &amp; legal notice</a></p>
+        <p>© 2026 <a href="https://ipsomachina.com">Ipso Machina</a> · Avenue de Chamonix 3 · 1207 Genève · Switzerland</p>
+      </footer>
+    </div>
+  </body>
+</html>

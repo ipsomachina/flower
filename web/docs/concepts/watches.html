@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Watches · Flower docs</title>
+  <meta name="description" content="Live query results over server-sent events, and when they change.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://flower.ipsomachina.com/docs/concepts/watches.html">
+  <meta property="og:title" content="Watches">
+  <meta property="og:description" content="Live query results over server-sent events, and when they change.">
+  <meta property="og:image" content="https://flower.ipsomachina.com/social.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Flower logo on a white background">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" type="image/svg+xml" href="../../favicon.svg">
+  <link rel="stylesheet" href="../assets/docs.css">
+</head>
+<body data-root="../">
+  <a class="skip-link" href="#content">Skip to content</a>
+  <header class="site-header">
+    <button class="menu-button" id="menu-toggle" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="sidebar"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M3 5.5h14M3 10h14M3 14.5h14"/></svg></button>
+    <a class="brand" href="../index.html"><svg viewBox="0 0 80 80" width="32" height="32" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(0 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(60 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(120 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(180 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(240 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(300 40 40)"/></svg><span class="brand-name">FLOWER</span><span class="brand-docs">Documentation</span></a>
+    <div class="header-spacer"></div>
+    <div class="search" role="search">
+      <input id="search-input" type="search" placeholder="Search" autocomplete="off" spellcheck="false" aria-label="Search the documentation" aria-controls="search-results" aria-expanded="false" role="combobox">
+      <div class="search-results" id="search-results" role="listbox" hidden></div>
+    </div>
+    <a class="header-link" href="../../index.html">Home</a>
+    <a class="header-link" href="https://github.com/ipsomachina/flower">GitHub</a>
+  </header>
+  <div class="scrim" id="scrim" hidden></div>
+  <div class="layout">
+  <nav class="sidebar" id="sidebar" aria-label="Documentation">
+    <h2>Get started</h2>
+    <ul>
+      <li><a href="../index.html">Introduction</a></li>
+      <li><a href="../quickstart.html">Quickstart</a></li>
+    </ul>
+    <h2>Concepts</h2>
+    <ul>
+      <li><a href="databases.html">Databases, modules and groups</a></li>
+      <li><a href="collections.html">Collections and indexes</a></li>
+      <li><a href="methods.html">Queries and mutations</a></li>
+      <li><a href="derived.html">Derived values and aggregates</a></li>
+      <li><a href="consistency.html">Revisions and consistency</a></li>
+      <li><a href="retries.html">Retries and receipts</a></li>
+      <li><a href="watches.html" aria-current="page">Watches</a></li>
+      <li><a href="time.html">Time</a></li>
+      <li><a href="queues-timers.html">Queues and timers</a></li>
+      <li><a href="modules.html">Modules and interfaces</a></li>
+      <li><a href="transactions.html">Transactions and partitions</a></li>
+    </ul>
+    <h2>Guides</h2>
+    <ul>
+      <li><a href="../guides/rust-client.html">Calling Flower from Rust</a></li>
+      <li><a href="../guides/sql.html">SQL queries</a></li>
+      <li><a href="../guides/errors-retries.html">Errors and retries in clients</a></li>
+      <li><a href="../guides/auth.html">Authentication and authorization</a></li>
+      <li><a href="../guides/crypto.html">Guest cryptography</a></li>
+      <li><a href="../guides/workers.html">Worker queues</a></li>
+      <li><a href="../guides/deployments.html">Deployments</a></li>
+      <li><a href="../guides/backups.html">Backups and restore</a></li>
+      <li><a href="../guides/operations.html">Operating a cluster</a></li>
+      <li><a href="../guides/testing.html">Testing applications</a></li>
+    </ul>
+    <h2>Reference</h2>
+    <ul>
+      <li><a href="../reference/http.html">HTTP API</a></li>
+      <li><a href="../reference/cli.html">cargo flower</a></li>
+      <li><a href="../reference/sdk.html">flower-sdk</a></li>
+      <li><a href="../reference/errors.html">Error codes and limits</a></li>
+    </ul>
+  </nav>
+  <div class="main">
+    <main class="content" id="content">
+      <p class="breadcrumb">Concepts</p>
+<!-- content -->
+<h1>Watches</h1>
+<p class="lede">A watch keeps one query's result up to date. You subscribe to a query and its arguments; the server sends the current value, then a new value — or a patch — whenever a commit changes what the query returns.</p>
+
+<h2 id="subscribing">Subscribing</h2>
+
+<p>A watch is a <code>POST /v1/watch</code> whose body is exactly a query's — <code>db</code>, <code>module</code>, <code>name</code>, <code>args</code>, and optionally <code>credentials</code> — answered as server-sent events:</p>
+
+<pre><code class="language-bash">curl -sN http://127.0.0.1:8080/v1/watch -H 'content-type: application/json' \
+  -d '{"db":"demo","module":"tasks","name":"open_tasks","args":{}}'</code></pre>
+
+<pre><code class="language-sse">event: snapshot
+data: {"revision":3,"id":1,"value":[{"id":"bread","title":"Bake bread"}]}
+
+event: snapshot
+data: {"revision":4,"id":3,"value":[{"id":"eggs","title":"Buy eggs"},{"id":"bread","title":"Bake bread"}]}
+
+event: snapshot
+data: {"revision":5,"id":4,"value":[{"id":"eggs","title":"Buy eggs"}]}</code></pre>
+
+<ul>
+  <li>The first event is always a <code>snapshot</code> of the current value. Then each change to the result produces one event carrying the <code>revision</code> it was computed at, and an <code>id</code> naming the value.</li>
+  <li>With <code>"deltas":true</code> in the body, a change may arrive as a <code>patch</code>: an RFC 6902 JSON Patch (<code>add</code>, <code>remove</code>, <code>replace</code>) against the value whose <code>id</code> is <code>base</code> — always the last one delivered. Patches are sent only when smaller than the whole value:
+<pre><code class="language-sse">event: patch
+data: {"revision":4,"id":3,"base":2,"patch":[{"op":"add","path":"/0","value":{"id":"eggs","title":"Buy eggs"}}]}
+
+event: patch
+data: {"revision":5,"id":4,"base":3,"patch":[{"op":"remove","path":"/1"}]}</code></pre></li>
+  <li>A watch that cannot start answers like the query would, with an ordinary error response: 404 <code>UNKNOWN_METHOD</code> for a name the module does not expose over HTTP, 403 when the authorization hook refuses, 422 when the query itself fails, 400 for a body that is not a query's (<code>args</code> is required; send <code>{}</code>).</li>
+  <li>Once streaming, an <code>error</code> event (<code>{"code","message"}</code>, plus <code>details</code> when the query's own failure carries them) ends the stream. Reconnect, unless the code says you should not (<code>unauthorized</code>).</li>
+  <li>An idle stream gets a <code>: watching</code> comment every 15 seconds, to keep proxies from closing it.</li>
+  <li>Credentials go in the body's <code>credentials</code> member, as for a query, or in an <code>Authorization: Bearer</code> header, which reaches the hook as <code>{"bearer": token}</code>. The module's authorization hook runs before the first snapshot.</li>
+  <li>The request's deadline (<code>x-flower-timeout-ms</code>) bounds the first snapshot only, and a trusted gateway's <code>timestamp_ms</code> likewise: later refreshes run on the serving member's clock, without a deadline from the request, and are shared with other subscribers.</li>
+</ul>
+
+<p>From Rust, <code>flower-client</code> wraps all of this in typed, reconnecting subscriptions; see <a href="../guides/rust-client.html#watches">Calling Flower from Rust</a>.</p>
+
+<h2 id="when-a-watch-wakes">When a watch wakes</h2>
+
+<p>Each evaluation of the query produces a <strong>dependency certificate</strong>: the records it read (present or absent), the scan and index ranges it covered (so an insertion into an empty range counts), and the derived values it read, expanded transitively. A commit wakes a watch only if it touched something in that certificate, or changed the module's code. Unrelated writes cost one check against the change journal.</p>
+
+<p>A woken watch re-evaluates its query and publishes only if the result's bytes changed. Values never go back in revision; several commits in quick succession may be coalesced into one event. Time also wakes watches: at an instant the query declared with <code>changes_at</code>, or every 250 ms for a query that read <code>now()</code>. See <a href="time.html">Time</a>.</p>
+
+<p>Watches on the same query, arguments and principal share one evaluation per member, however many clients subscribe. Access is never shared: every subscriber is authorized separately.</p>
+
+<h2 id="reauthorization">Reauthorization</h2>
+
+<p>Every delivery is authorized at the revision it shows. Before publishing a refresh, the server re-runs each subscriber's authorization against the same view it evaluates the query on. It also rechecks when a commit touches what the decision read, at the decision's declared expiry, when a managed key the decision used changes, and at least every 30 seconds. A subscriber who is no longer allowed gets an <code>error</code> event with code <code>unauthorized</code>, and the stream ends; one whose principal changed gets <code>watch_scope_changed</code> and should reconnect.</p>
+
+<h2 id="consistency-and-failover">Consistency and failover</h2>
+
+<p>A watch's first snapshot reads as the query declares. Watches take no staleness bound from the caller. A follower cut off from its leader keeps its watches open but cannot refresh them, except replica-local watches with a bound, which it ends once they are past it. When a stream ends — leader change, member shutdown (<code>shutdown</code>), partition move, redeployment removing the alias (<code>UNKNOWN_METHOD</code>) — reconnect and you get a fresh snapshot.</p>
+
+<div class="callout">
+<p><span class="callout-title">Not an event log</span> A watch delivers the <em>current value</em> of a query, not the history of changes. Reconnecting does not replay what you missed; there is no <code>Last-Event-ID</code>. If you need every change, write changes to a collection (a trigger is a good place) and watch or page that.</p>
+</div>
+
+<h2 id="limits">Limits</h2>
+
+<ul>
+  <li>Each subscriber has a 32-event queue. A subscriber that falls that far behind is dropped and its stream closes without an error event; reconnect.</li>
+  <li>A query that reads more than 4,096 dependencies gets a broad certificate: any change to its database wakes it. Keep watched queries focused.</li>
+  <li>Each watch is an HTTP/2 stream. The Rust client opens another connection per 100 watches.</li>
+  <li>A member holds at most 64 MiB of watches' arguments and credentials. Past that, a new watch is refused as an overload (503, retryable) until others end.</li>
+</ul>
+<!-- /content -->
+      <nav class="page-nav" aria-label="Previous and next">
+        <a class="prev" href="retries.html" rel="prev">← Retries and receipts</a>
+        <a class="next" href="time.html" rel="next">Time →</a>
+      </nav>
+      <footer class="site-footer">
+        <p><a href="https://github.com/ipsomachina/flower">Flower on GitHub</a> · <a href="../../LICENSE">MIT license</a> · <a href="https://ipsomachina.com/privacy">Privacy &amp; legal notice</a></p>
+        <p>© 2026 <a href="https://ipsomachina.com">Ipso Machina</a> · Avenue de Chamonix 3 · 1207 Genève · Switzerland</p>
+      </footer>
+    </main>
+    <nav class="toc" aria-label="On this page">
+      <h2>On this page</h2>
+      <ul>
+        <li class="depth-2"><a href="#subscribing">Subscribing</a></li>
+        <li class="depth-2"><a href="#when-a-watch-wakes">When a watch wakes</a></li>
+        <li class="depth-2"><a href="#reauthorization">Reauthorization</a></li>
+        <li class="depth-2"><a href="#consistency-and-failover">Consistency and failover</a></li>
+        <li class="depth-2"><a href="#limits">Limits</a></li>
+      </ul>
+    </nav>
+  </div>
+  </div>
+  <script src="../assets/search-index.js"></script>
+  <script src="../assets/docs.js"></script>
+</body>
+</html>

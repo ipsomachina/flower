@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>SQL queries · Flower docs</title>
+  <meta name="description" content="Typed plans, scoped SQL endpoints, resource limits, explain and diagnostics.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://flower.ipsomachina.com/docs/guides/sql.html">
+  <meta property="og:title" content="SQL queries">
+  <meta property="og:description" content="Typed plans, scoped SQL endpoints, resource limits, explain and diagnostics.">
+  <meta property="og:image" content="https://flower.ipsomachina.com/social.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Flower logo on a white background">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" type="image/svg+xml" href="../../favicon.svg">
+  <link rel="stylesheet" href="../assets/docs.css">
+</head>
+<body data-root="../">
+  <a class="skip-link" href="#content">Skip to content</a>
+  <header class="site-header">
+    <button class="menu-button" id="menu-toggle" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="sidebar"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M3 5.5h14M3 10h14M3 14.5h14"/></svg></button>
+    <a class="brand" href="../index.html"><svg viewBox="0 0 80 80" width="32" height="32" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(0 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(60 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(120 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(180 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(240 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(300 40 40)"/></svg><span class="brand-name">FLOWER</span><span class="brand-docs">Documentation</span></a>
+    <div class="header-spacer"></div>
+    <div class="search" role="search">
+      <input id="search-input" type="search" placeholder="Search" autocomplete="off" spellcheck="false" aria-label="Search the documentation" aria-controls="search-results" aria-expanded="false" role="combobox">
+      <div class="search-results" id="search-results" role="listbox" hidden></div>
+    </div>
+    <a class="header-link" href="../../index.html">Home</a>
+    <a class="header-link" href="https://github.com/ipsomachina/flower">GitHub</a>
+  </header>
+  <div class="scrim" id="scrim" hidden></div>
+  <div class="layout">
+  <nav class="sidebar" id="sidebar" aria-label="Documentation">
+    <h2>Get started</h2>
+    <ul>
+      <li><a href="../index.html">Introduction</a></li>
+      <li><a href="../quickstart.html">Quickstart</a></li>
+    </ul>
+    <h2>Concepts</h2>
+    <ul>
+      <li><a href="../concepts/databases.html">Databases, modules and groups</a></li>
+      <li><a href="../concepts/collections.html">Collections and indexes</a></li>
+      <li><a href="../concepts/methods.html">Queries and mutations</a></li>
+      <li><a href="../concepts/derived.html">Derived values and aggregates</a></li>
+      <li><a href="../concepts/consistency.html">Revisions and consistency</a></li>
+      <li><a href="../concepts/retries.html">Retries and receipts</a></li>
+      <li><a href="../concepts/watches.html">Watches</a></li>
+      <li><a href="../concepts/time.html">Time</a></li>
+      <li><a href="../concepts/queues-timers.html">Queues and timers</a></li>
+      <li><a href="../concepts/modules.html">Modules and interfaces</a></li>
+      <li><a href="../concepts/transactions.html">Transactions and partitions</a></li>
+    </ul>
+    <h2>Guides</h2>
+    <ul>
+      <li><a href="rust-client.html">Calling Flower from Rust</a></li>
+      <li><a href="sql.html" aria-current="page">SQL queries</a></li>
+      <li><a href="errors-retries.html">Errors and retries in clients</a></li>
+      <li><a href="auth.html">Authentication and authorization</a></li>
+      <li><a href="crypto.html">Guest cryptography</a></li>
+      <li><a href="workers.html">Worker queues</a></li>
+      <li><a href="deployments.html">Deployments</a></li>
+      <li><a href="backups.html">Backups and restore</a></li>
+      <li><a href="operations.html">Operating a cluster</a></li>
+      <li><a href="testing.html">Testing applications</a></li>
+    </ul>
+    <h2>Reference</h2>
+    <ul>
+      <li><a href="../reference/http.html">HTTP API</a></li>
+      <li><a href="../reference/cli.html">cargo flower</a></li>
+      <li><a href="../reference/sdk.html">flower-sdk</a></li>
+      <li><a href="../reference/errors.html">Error codes and limits</a></li>
+    </ul>
+  </nav>
+  <div class="main">
+    <main class="content" id="content">
+      <p class="breadcrumb">Guides</p>
+<!-- content -->
+<h1>SQL queries</h1>
+<p class="lede">Run bounded, read-only SQL through ordinary module queries. Declare a typed plan for a fixed statement, or a scoped endpoint for statements supplied at request time.</p>
+
+<h2 id="endpoint">Request-time SQL</h2>
+<p>A <code>SqlEndpoint</code> fixes the local collections a statement may read and its resource ceilings. A wrapping query chooses the public name and access rules. The endpoint itself creates no HTTP route. SQL reads the invocation's pinned snapshot, sees staged writes, and applies the enclosing authority's row and field policies.</p>
+<p>This application exposes <code>sql</code>, <code>sql_explain</code>, a typed <code>orders_by_owner</code> query and a mutation for inserting orders. The <code>#[application]</code> macro assembles its lexical collections and methods; <code>#[component]</code> registers the SQL declarations. Export <code>shop::APP</code> from your guest crate's root.</p>
+<pre><code class="language-rust" data-include="examples/snippets/src/sql.rs#application">use alloc::{string::String, vec::Vec};
+use flower_sdk::typed::DecimalI64;
+use flower_sdk::{SqlBudget, SqlEndpoint, SqlQuery, Value, prelude::*};
+
+#[flower_sdk::application]
+pub mod shop {
+    use super::*;
+
+    #[derive(FlowerType)]
+    pub struct Order {
+        pub owner: String,
+        pub total: DecimalI64,
+    }
+
+    #[collection(name = "orders", key = String, value = Order,
+                 index(name = "by_owner", fields(owner)))]
+    pub struct Orders;
+
+    #[component]
+    static SQL_ENDPOINT: SqlEndpoint = SqlEndpoint::new(
+        "orders.sql",
+        &amp;[Orders::NAME],
+        SqlBudget::new(1_000, 1_048_576, 1_000_000),
+    );
+
+    #[query(http)]
+    pub fn sql(ctx: &amp;mut QueryCtx&lt;'_, '_&gt;, statement: String, params: Value) -&gt; Result&lt;Vec&lt;Value&gt;&gt; {
+        SQL_ENDPOINT.run(ctx, &amp;statement, &amp;params)
+    }
+
+    #[query(http)]
+    pub fn sql_explain(
+        ctx: &amp;mut QueryCtx&lt;'_, '_&gt;,
+        statement: String,
+        params: Value,
+    ) -&gt; Result&lt;Value&gt; {
+        SQL_ENDPOINT.explain(ctx, &amp;statement, &amp;params)
+    }
+
+    #[mutation(http)]
+    pub fn put_order(ctx: &amp;mut MutationCtx&lt;'_, '_&gt;, id: String, order: Order) -&gt; Result&lt;()&gt; {
+        Orders::set(ctx, &amp;id, &amp;order)
+    }
+
+    #[derive(FlowerType)]
+    pub struct OrdersParams {
+        pub owner: String,
+        pub limit: u32,
+    }
+
+    #[derive(FlowerType)]
+    pub struct OrderRow {
+        pub id: String,
+        pub total: DecimalI64,
+    }
+
+    #[component]
+    static BY_OWNER: SqlQuery&lt;OrdersParams, OrderRow&gt; = SqlQuery::new(
+        "orders.by_owner",
+        "SELECT _key AS id, total FROM orders WHERE owner = :owner
+         ORDER BY total DESC LIMIT :limit",
+        SqlBudget::new(1_000, 1_048_576, 1_000_000),
+    )
+    .require_index();
+
+    #[query(http)]
+    pub fn orders_by_owner(
+        ctx: &amp;mut QueryCtx&lt;'_, '_&gt;,
+        owner: String,
+        limit: u32,
+    ) -&gt; Result&lt;Vec&lt;OrderRow&gt;&gt; {
+        BY_OWNER.run(ctx, &amp;OrdersParams { owner, limit })
+    }
+}
+// In the guest crate's root: flower_sdk::export!(shop::APP);</code></pre>
+<p>For manual composition, use <code>App::new</code> and list the collection, endpoint, named plan and method descriptors explicitly. HTTP exposure and authorization remain properties of the wrapping methods.</p>
+
+<h2 id="execute">Build, deploy and execute</h2>
+<p>The repository includes a complete <code>sql-queries</code> guest. With a server running, set <code>FLOWER_ADMIN_TOKEN</code> for deployment and <code>FLOWER_TOKEN</code> for application calls as required by your server and module.</p>
+<pre><code class="language-bash">cargo flower build --package sql-queries --profile dev
+cargo flower deploy --db demo --module shop --wasm .flower/sql-queries.wasm
+cargo flower call --db demo --module shop --name put_order --mutation --args-file order.json
+cargo flower call --db demo --module shop --name sql --args-file query.json
+cargo flower call --db demo --module shop --name sql_explain --args-file query.json</code></pre>
+<p>Contents of <code>order.json</code> for the repository example:</p>
+<pre><code class="language-json">{"id":"one","order":{"owner":"ada","status":"open","total":"9007199254740993"}}</code></pre>
+<p>Contents of <code>query.json</code>:</p>
+<pre><code class="language-json">{"statement":"SELECT _key AS id, total FROM orders WHERE owner = :owner ORDER BY total DESC LIMIT :limit","params":{"owner":"ada","limit":10}}</code></pre>
+<p><code>--args-file -</code> reads standard input. Add <code>--contract .flower/sql-queries.manifest.json</code> to validate the public method and argument shape locally. SQL syntax and binding are checked by the host when it executes the module query. Over HTTP, use the same arguments with <code>POST /v1/query</code>; there is no separate administrative SQL endpoint.</p>
+
+<h2 id="contracts">Parameters and result contracts</h2>
+<p><code>SqlQuery&lt;P, R&gt;</code> binds its statement and parameter/result schemas at deployment. <code>run(ctx, &amp;params)</code> returns <code>Vec&lt;R&gt;</code>. Each plan is a component and must be registered.</p>
+<p><code>SqlEndpoint::run</code> accepts any <code>FlowerType</code> parameter object, including <code>Value</code>, and returns projected JSON objects. <code>run_as&lt;R&gt;</code> decodes rows into a chosen result contract. Supply exactly the named parameters the statement uses, with an empty object or null when none are needed. The dynamic binder infers types from values and column comparisons. Decimal columns require exact decimal strings; a JSON number cannot substitute for one.</p>
+<p>Explicit null and absent data remain distinct. Redacted or absent projected fields are omitted; typed response fields that may be absent should use <code>Omittable&lt;T&gt;</code>. SQL predicates on absent/redacted fields are unknown, including <code>IS NULL</code>. Visible null values follow SQL null semantics. Field policies also apply before comparisons and sorting.</p>
+
+<h2 id="dialect">Supported dialect</h2>
+<p>Statements select from one local collection, using <code>*</code> or projections, aliases, named parameters, comparisons, <code>IS NULL</code>, <code>IS NOT NULL</code>, <code>AND</code>, <code>OR</code>, <code>NOT</code>, ordering and a mandatory <code>LIMIT</code>. Access the primary key with <code>_key</code>, tuple keys with <code>_key[n]</code>, and declared nested fields through paths. LIMIT must be between 1 and 10,000.</p>
+<p>Ordering follows logical values, including exact decimal integers, with a deterministic key tie-breaker. Joins, aggregates, arbitrary functions, writes and continuation cursors are not implemented. Results are complete for the statement's limit at one snapshot.</p>
+
+<h2 id="budgets">Access paths and limits</h2>
+<p>The planner can use primary-key equality, a complete secondary-index equality bucket, or a bounded collection scan. <code>require_index()</code> rejects a named plan at deployment, or a dynamic statement at execution, when no supported index path is proven. Legacy index ordering does not support SQL range pushdown or partial-prefix optimization.</p>
+<p><code>SqlBudget::new(candidates, bytes, work)</code> configures positive ceilings. <code>scan</code> remains an equivalent constructor. Maxima are 10,000 candidates, 64 MiB and 10,000,000 work units. Hidden rows still count; LIMIT bounds returned rows and does not bound scan input. Dynamic parsing and binding consume the endpoint's budget. Statements are limited to 16 KiB and named parameter objects to 64 members. Exhaustion fails the operation rather than returning a partial result.</p>
+
+<h2 id="explain">Explain and diagnostics</h2>
+<p>Both handles offer <code>explain</code> returning <code>Value</code> and <code>explain_typed</code> returning <code>SqlExplain</code>. The typed view includes the access path, collection, proven input bound and resource ceilings, and retains extension fields in <code>raw</code>. Dynamic explain binds the supplied parameters without reading rows; its execution ceilings reflect the remaining budget after binding.</p>
+<pre><code class="language-bash">cargo flower sql-explain --manifest .flower/sql-queries.manifest.json --plan orders.open</code></pre>
+<p>The CLI command explains a named plan offline. For a request-time statement, call the module's <code>sql_explain</code> query.</p>
+<p><code>SQL_INVALID</code> covers syntax, binding and unsupported access paths. Parser diagnostics include zero-based UTF-8 <code>start_byte</code> and exclusive <code>end_byte</code>; end-of-input failures have an empty span. <code>SQL_BUDGET</code> reports exhaustion; evaluator failures identify the dimension in <code>details.budget</code>. Parameter contract errors use <code>INVALID_ARGUMENT</code>. An endpoint scope refusal uses <code>ACCESS_DENIED</code>.</p>
+
+<h2 id="compatibility">Compatibility</h2>
+<p>SQL host operations and decimal schemas require state-machine compatibility version 10. The stored value format remains 4. Existing store-contract checks require backup/restore into a fresh directory across a contract change; see <a href="../reference/cli.html#serve">the upgrade procedure</a>. Value-ordered indexes, snapshot-retaining pagination and cross-group recovery changes remain future work.</p>
+<!-- /content -->
+      <nav class="page-nav" aria-label="Previous and next">
+        <a class="prev" href="rust-client.html" rel="prev">← Calling Flower from Rust</a>
+        <a class="next" href="errors-retries.html" rel="next">Errors and retries in clients →</a>
+      </nav>
+      <footer class="site-footer">
+        <p><a href="https://github.com/ipsomachina/flower">Flower on GitHub</a> · <a href="../../LICENSE">MIT license</a> · <a href="https://ipsomachina.com/privacy">Privacy &amp; legal notice</a></p>
+        <p>© 2026 <a href="https://ipsomachina.com">Ipso Machina</a> · Avenue de Chamonix 3 · 1207 Genève · Switzerland</p>
+      </footer>
+    </main>
+    <nav class="toc" aria-label="On this page">
+      <h2>On this page</h2>
+      <ul>
+        <li class="depth-2"><a href="#endpoint">Request-time SQL</a></li>
+        <li class="depth-2"><a href="#execute">Build, deploy and execute</a></li>
+        <li class="depth-2"><a href="#contracts">Parameters and result contracts</a></li>
+        <li class="depth-2"><a href="#dialect">Supported dialect</a></li>
+        <li class="depth-2"><a href="#budgets">Access paths and limits</a></li>
+        <li class="depth-2"><a href="#explain">Explain and diagnostics</a></li>
+        <li class="depth-2"><a href="#compatibility">Compatibility</a></li>
+      </ul>
+    </nav>
+  </div>
+  </div>
+  <script src="../assets/search-index.js"></script>
+  <script src="../assets/docs.js"></script>
+</body>
+</html>

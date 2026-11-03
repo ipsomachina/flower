@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Queues and timers · Flower docs</title>
+  <meta name="description" content="Durable jobs with fenced leases, and not-before timers that fire mutations.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://flower.ipsomachina.com/docs/concepts/queues-timers.html">
+  <meta property="og:title" content="Queues and timers">
+  <meta property="og:description" content="Durable jobs with fenced leases, and not-before timers that fire mutations.">
+  <meta property="og:image" content="https://flower.ipsomachina.com/social.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Flower logo on a white background">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" type="image/svg+xml" href="../../favicon.svg">
+  <link rel="stylesheet" href="../assets/docs.css">
+</head>
+<body data-root="../">
+  <a class="skip-link" href="#content">Skip to content</a>
+  <header class="site-header">
+    <button class="menu-button" id="menu-toggle" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="sidebar"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M3 5.5h14M3 10h14M3 14.5h14"/></svg></button>
+    <a class="brand" href="../index.html"><svg viewBox="0 0 80 80" width="32" height="32" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(0 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(60 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(120 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(180 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(240 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(300 40 40)"/></svg><span class="brand-name">FLOWER</span><span class="brand-docs">Documentation</span></a>
+    <div class="header-spacer"></div>
+    <div class="search" role="search">
+      <input id="search-input" type="search" placeholder="Search" autocomplete="off" spellcheck="false" aria-label="Search the documentation" aria-controls="search-results" aria-expanded="false" role="combobox">
+      <div class="search-results" id="search-results" role="listbox" hidden></div>
+    </div>
+    <a class="header-link" href="../../index.html">Home</a>
+    <a class="header-link" href="https://github.com/ipsomachina/flower">GitHub</a>
+  </header>
+  <div class="scrim" id="scrim" hidden></div>
+  <div class="layout">
+  <nav class="sidebar" id="sidebar" aria-label="Documentation">
+    <h2>Get started</h2>
+    <ul>
+      <li><a href="../index.html">Introduction</a></li>
+      <li><a href="../quickstart.html">Quickstart</a></li>
+    </ul>
+    <h2>Concepts</h2>
+    <ul>
+      <li><a href="databases.html">Databases, modules and groups</a></li>
+      <li><a href="collections.html">Collections and indexes</a></li>
+      <li><a href="methods.html">Queries and mutations</a></li>
+      <li><a href="derived.html">Derived values and aggregates</a></li>
+      <li><a href="consistency.html">Revisions and consistency</a></li>
+      <li><a href="retries.html">Retries and receipts</a></li>
+      <li><a href="watches.html">Watches</a></li>
+      <li><a href="time.html">Time</a></li>
+      <li><a href="queues-timers.html" aria-current="page">Queues and timers</a></li>
+      <li><a href="modules.html">Modules and interfaces</a></li>
+      <li><a href="transactions.html">Transactions and partitions</a></li>
+    </ul>
+    <h2>Guides</h2>
+    <ul>
+      <li><a href="../guides/rust-client.html">Calling Flower from Rust</a></li>
+      <li><a href="../guides/sql.html">SQL queries</a></li>
+      <li><a href="../guides/errors-retries.html">Errors and retries in clients</a></li>
+      <li><a href="../guides/auth.html">Authentication and authorization</a></li>
+      <li><a href="../guides/crypto.html">Guest cryptography</a></li>
+      <li><a href="../guides/workers.html">Worker queues</a></li>
+      <li><a href="../guides/deployments.html">Deployments</a></li>
+      <li><a href="../guides/backups.html">Backups and restore</a></li>
+      <li><a href="../guides/operations.html">Operating a cluster</a></li>
+      <li><a href="../guides/testing.html">Testing applications</a></li>
+    </ul>
+    <h2>Reference</h2>
+    <ul>
+      <li><a href="../reference/http.html">HTTP API</a></li>
+      <li><a href="../reference/cli.html">cargo flower</a></li>
+      <li><a href="../reference/sdk.html">flower-sdk</a></li>
+      <li><a href="../reference/errors.html">Error codes and limits</a></li>
+    </ul>
+  </nav>
+  <div class="main">
+    <main class="content" id="content">
+      <p class="breadcrumb">Concepts</p>
+<!-- content -->
+<h1>Queues and timers</h1>
+<p class="lede">Guests never touch the outside world. Work that must — sending email, calling a payment provider — becomes a durable job that a native worker claims under a fenced lease. Work that must happen later becomes a timer that fires a mutation.</p>
+
+<h2 id="queues">Queues</h2>
+
+<p>A mutation <strong>enqueues</strong> a job: a JSON payload in a named queue. The enqueue is part of the mutation, so the job exists exactly when the mutation commits and never if it rolls back. Workers then <strong>claim</strong> jobs, do the work, and <strong>report</strong> the outcome. A <code>TypedQueue&lt;P, R&gt;</code> static is the queue's declaration, its contract and its handle at once: listed among the app's components, it declares the queue, and the server checks every payload against <code>P</code> and every kept result against <code>R</code>:</p>
+
+<pre><code class="language-rust" data-include="examples/snippets/src/queues.rs#queue">#[derive(FlowerType, Clone, Debug, PartialEq)]
+pub struct Email {
+    pub to: String,
+    pub subject: String,
+}
+
+#[derive(FlowerType, Clone, Debug, PartialEq)]
+pub struct Sent {
+    pub message_id: String,
+}
+
+/// The queue, its contract and its handle in one declaration. Listed
+/// among the app's components, it declares the queue: the host refuses
+/// any other payload, from guests and native workers alike, and checks
+/// kept results too.
+pub static MAIL: TypedQueue&lt;Email, Sent&gt; = TypedQueue::new("mail");
+
+/// Queue an invitation in the tenant's scope. The job exists exactly
+/// when this mutation commits; naming it makes a second invitation to
+/// the same address fail `JOB_EXISTS` instead of queueing twice.
+#[mutation(http)]
+pub fn invite(ctx: &amp;mut MutationCtx&lt;'_, '_&gt;, tenant: String, to: String) -&gt; Result&lt;String&gt; {
+    let email = Email {
+        to: to.clone(),
+        subject: String::from("You are invited"),
+    };
+    let options = EnqueueOptions::default()
+        .scope(&amp;tenant)
+        .named(&amp;format!("invite:{to}"))
+        .max_attempts(10);
+    MAIL.enqueue(ctx, &amp;email, &amp;options)
+}
+
+/// Whether an invitation went out, from the result the worker kept.
+#[query(http)]
+pub fn invitation_sent(ctx: &amp;mut QueryCtx&lt;'_, '_&gt;, tenant: String, to: String) -&gt; Result&lt;bool&gt; {
+    let name = format!("invite:{to}");
+    let job = Job::Named {
+        scope: &amp;tenant,
+        name: &amp;name,
+    };
+    Ok(MAIL.result(ctx, job)?.is_some())
+}</code></pre>
+
+<p>Calling <code>invite</code> twice for the same address shows the named job at work. The second call is the mutation's own failure, HTTP 422:</p>
+
+<pre><code class="language-json">{"ok":true,"value":"1ff7d39fc385f5fe1d53b0e5a4ca7e32","revision":5,"position":34,"duplicate":false}
+{"ok":false,"revision":5,"position":35,"code":"JOB_EXISTS","message":"job invite:ada@example.com already exists","duplicate":false}</code></pre>
+
+<p>Guest code uses only the queues its own module declares; naming any other fails with <code>queue_undeclared</code>. A queue's work belongs to the modules that declare it: when a removed module's data is <a href="../guides/deployments.html#removing-a-module">purged</a>, the queues no other module declares are deleted with it, and until that purge ends every operation on them is refused with <code>queue_purging</code>, changing nothing — retry once it is over. Below the typed handle, <code>Queue::enqueue(ctx, "mail", payload, &amp;options)</code> and its siblings take the queue's name and raw <code>Value</code>s, under the same rule; a <code>QueueDef</code> static declares a queue with explicit schemas for that layer.</p>
+
+<h3 id="enqueue-options">Enqueue options</h3>
+
+<table>
+  <thead><tr><th>Option</th><th>Default</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td><code>scope(s)</code></td><td><code>""</code></td><td>A logical partition of the queue — per tenant, per region. Workers claim from one scope at a time. Scopes separate work; they do not authenticate anyone.</td></tr>
+    <tr><td><code>priority(p)</code></td><td><code>0</code></td><td>Lower values are claimed first.</td></tr>
+    <tr><td><code>group(g)</code></td><td>none</td><td>Within a priority, each ready group's next job goes before any group's second: fair turns between, say, customers.</td></tr>
+    <tr><td><code>named(n)</code></td><td>random ID</td><td>A name unique within the scope. A second enqueue of a pending or claimed name fails <code>JOB_EXISTS</code>.</td></tr>
+    <tr><td><code>replace()</code></td><td>off</td><td>With a name: replace a completed or dead job of that name instead of failing.</td></tr>
+    <tr><td><code>delay_ms(d)</code> / <code>at_ms(t)</code></td><td>now</td><td>Not claimable before then; at most 30 days ahead. Use one or the other.</td></tr>
+    <tr><td><code>max_attempts(n)</code></td><td><code>5</code></td><td>Claims before the job dies (1–100).</td></tr>
+  </tbody>
+</table>
+
+<h3 id="claims-and-leases">Claims, leases and fencing</h3>
+
+<p>A claim takes up to 100 claimable jobs of one scope — due pending jobs, and claimed jobs whose lease lapsed — lowest priority first, then group turns, then the job that waited longest. Each claim:</p>
+
+<ul>
+  <li>uses one of the job's attempts;</li>
+  <li>holds a <strong>lease</strong> (30 seconds by default, at most an hour) that the worker renews while it works;</li>
+  <li>carries a secret <strong>token</strong> that every renewal and report must present;</li>
+  <li>carries a <strong>fencing token</strong>, larger than every one issued before it in that queue and scope. Pass it to the downstream system so it can refuse a write from a worker whose lease lapsed and was taken over.</li>
+</ul>
+
+<p>The worker then reports one of: <strong>complete</strong> (keep the job with a result), <strong>finish</strong> (delete it), <strong>fail</strong> (pending again after a delay, keeping its turn, or dead once attempts run out), <strong>kill</strong> (dead now) or <strong>release</strong> (hand it back without spending an attempt). A lapsed lease redelivers the job, so queues are <strong>at-least-once</strong>: make the work idempotent, or fence it.</p>
+
+<p>Claims are tied to the database's history: after a restore to an earlier point, holders of old claims can no longer renew or report.</p>
+
+<h3 id="who-claims">Who claims</h3>
+
+<p>Usually a native worker built with <a href="../guides/workers.html"><code>flower-worker</code></a>, over the worker HTTP endpoints (<code>/v1/queue/poll</code>, <code>/complete</code>, …) with the server's worker token. Native workers may name any queue, but never enqueue: jobs come only from mutations. Guest mutations can claim and report too, through the typed handle's <code>claim</code>, <code>complete</code>, <code>renew</code> and friends, which is useful for work that stays inside the database. Goblin Pizza's <code>pizza.deliver</code> renews a delivery drone's lease inside the paying mutation, so a drone whose lease lapsed cannot collect payment.</p>
+
+<p>Queries can watch a queue: <code>stats</code> and <code>ready</code> (on the typed handle, or <code>Queue::stats</code> and <code>Queue::ready</code> by name) return counts and whether a claim would succeed, from any context, and a query reading them is re-run when that changes — when a delayed job falls due or a lease lapses. The <code>flower-worker</code> crate uses this to sleep until there is work.</p>
+
+<h2 id="timers">Timers</h2>
+
+<p>A mutation schedules a <strong>timer</strong> by a stable ID: at a due time, the leader runs a mutation of the same module (the <em>handler</em>) with the arguments you gave. The handler is the mutation's own static and the arguments its own argument struct, so a mistake is a compile error; the arguments are also checked against its contract when the timer is scheduled. Scheduling an existing ID replaces the timer, which makes debouncing trivial.</p>
+
+<pre><code class="language-rust" data-include="examples/snippets/src/queues.rs#timer">const TRIAL: Duration = Duration::from_secs(14 * 24 * 60 * 60);
+
+/// Timer IDs are any text up to 128 bytes, without control characters.
+fn trial_timer(account: &amp;str) -&gt; String {
+    format!("trial:{account}")
+}
+
+#[mutation(http)]
+pub fn start_trial(ctx: &amp;mut MutationCtx&lt;'_, '_&gt;, account: String) -&gt; Result&lt;()&gt; {
+    Trials::set(ctx, &amp;account, &amp;Trial { active: true })?;
+    // The handler is the mutation's descriptor and its arguments its own
+    // argument struct, checked now. Scheduling an existing ID replaces
+    // that timer.
+    let args = EndTrialArgs {
+        account: account.clone(),
+    };
+    Timers::after(ctx, &amp;trial_timer(&amp;account), TRIAL, &amp;END_TRIAL, &amp;args)
+}
+
+/// The timer's handler: an ordinary mutation of this module. Without
+/// `http`, nothing outside the module can call it.
+#[mutation]
+pub fn end_trial(ctx: &amp;mut MutationCtx&lt;'_, '_&gt;, account: String) -&gt; Result&lt;()&gt; {
+    Trials::set(ctx, &amp;account, &amp;Trial { active: false })
+}
+
+#[mutation(http)]
+pub fn convert(ctx: &amp;mut MutationCtx&lt;'_, '_&gt;, account: String) -&gt; Result&lt;bool&gt; {
+    Trials::delete(ctx, &amp;account)?;
+    Timers::cancel(ctx, &amp;trial_timer(&amp;account))
+}</code></pre>
+
+<ul>
+  <li>The handler is a mutation of the same module. It needs no <code>http</code>, and an internal handler should have none: then no client can call it, as the 404 <code>UNKNOWN_METHOD</code> for <code>end_trial</code> shows.</li>
+  <li><code>Timers::after(ctx, id, delay, &amp;HANDLER, &amp;args)</code> takes a <code>core::time::Duration</code>; <code>Timers::at</code> an epoch-millisecond due time. <code>Timers::schedule</code> is the full form, over any mutation descriptor and raw arguments, with <code>ScheduleOptions</code>.</li>
+  <li>The due time means "not before". The leader fires due timers through the log on its maintenance tick (<code>--timer-sweep-ms</code>, one second by default) and as soon as a timer falls due, using the module's <em>current</em> code.</li>
+  <li>A handler that fails is retried, up to <code>max_attempts</code> (3 by default, at most 100, set through <code>ScheduleOptions</code>); after that the timer is <code>dead</code>. Operators inspect and revive timers with <code>cargo flower timer</code>, and guests with <code>Timers::get</code> and <code>scan</code> (from any context) and <code>retry</code>.</li>
+  <li>Timer IDs are any text of 1 to 128 bytes without control characters, so free-form identifiers work as they are:
+<pre><code class="language-console">$ cargo flower timer --db shop list
+{"args":{"account":"ada"},"attempts":0,"due_ms":1794752193392,"handler":"end_trial","id":"trial:ada","max_attempts":3,"state":"pending"}</code></pre></li>
+  <li>Timer firings have no caller and no principal; the authorization hook does not run for them.</li>
+</ul>
+
+<h3 id="registering">Registering them</h3>
+
+<p>The queue is a component; the timer's handler is an ordinary mutation:</p>
+
+<pre><code class="language-rust" data-include="examples/snippets/src/queues.rs#app">pub static APP: App = App::new(&amp;[
+    &amp;MAIL,
+    &amp;Trials,
+    &amp;INVITE,
+    &amp;INVITATION_SENT,
+    &amp;START_TRIAL,
+    &amp;END_TRIAL,
+    &amp;CONVERT,
+]);</code></pre>
+
+<h2 id="choosing">Queues, timers or tasks?</h2>
+
+<table>
+  <thead><tr><th>Use</th><th>When</th></tr></thead>
+  <tbody>
+    <tr><td>A <strong>queue</strong></td><td>The work happens outside Flower, may fail and be retried, and needs a worker process.</td></tr>
+    <tr><td>A <strong>timer</strong></td><td>A specific thing must happen inside Flower at or after a specific time: expire a trial, finish baking a pizza.</td></tr>
+    <tr><td>A <a href="derived.html#maintenance-tasks"><strong>maintenance task</strong></a></td><td>Periodic housekeeping whose need you can compute from the data: purge expired sessions, compact old rows.</td></tr>
+  </tbody>
+</table>
+<!-- /content -->
+      <nav class="page-nav" aria-label="Previous and next">
+        <a class="prev" href="time.html" rel="prev">← Time</a>
+        <a class="next" href="modules.html" rel="next">Modules and interfaces →</a>
+      </nav>
+      <footer class="site-footer">
+        <p><a href="https://github.com/ipsomachina/flower">Flower on GitHub</a> · <a href="../../LICENSE">MIT license</a> · <a href="https://ipsomachina.com/privacy">Privacy &amp; legal notice</a></p>
+        <p>© 2026 <a href="https://ipsomachina.com">Ipso Machina</a> · Avenue de Chamonix 3 · 1207 Genève · Switzerland</p>
+      </footer>
+    </main>
+    <nav class="toc" aria-label="On this page">
+      <h2>On this page</h2>
+      <ul>
+        <li class="depth-2"><a href="#queues">Queues</a></li>
+        <li class="depth-3"><a href="#enqueue-options">Enqueue options</a></li>
+        <li class="depth-3"><a href="#claims-and-leases">Claims, leases and fencing</a></li>
+        <li class="depth-3"><a href="#who-claims">Who claims</a></li>
+        <li class="depth-2"><a href="#timers">Timers</a></li>
+        <li class="depth-3"><a href="#registering">Registering them</a></li>
+        <li class="depth-2"><a href="#choosing">Queues, timers or tasks?</a></li>
+      </ul>
+    </nav>
+  </div>
+  </div>
+  <script src="../assets/search-index.js"></script>
+  <script src="../assets/docs.js"></script>
+</body>
+</html>

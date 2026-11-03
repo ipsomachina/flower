@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="light dark">
+<title>Flower admin</title>
+<link rel="icon" href="/admin/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/admin/style.css">
+<script type="module" src="/admin/app.js"></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="topbar">
+  <div class="identity">
+    <span class="brand"><img src="/admin/favicon.svg" alt="" width="18" height="18"> Flower</span>
+    <span id="node-identity" class="node-identity">connecting&hellip;</span>
+    <span id="leader-link" class="leader-link"></span>
+  </div>
+  <div class="controls" role="group" aria-label="Refresh and view controls">
+    <label class="control">Sample every
+      <select id="interval">
+        <option value="1000">1 s</option>
+        <option value="2000">2 s</option>
+        <option value="5000">5 s</option>
+        <option value="10000">10 s</option>
+        <option value="60000">60 s</option>
+      </select>
+    </label>
+    <label class="control">Window
+      <select id="window">
+        <option value="60000">1 min</option>
+        <option value="300000">5 min</option>
+        <option value="900000">15 min</option>
+      </select>
+    </label>
+    <button type="button" id="pause" aria-pressed="false">Pause</button>
+    <button type="button" id="refresh">Refresh now</button>
+    <span id="transport" class="transport" aria-live="polite"></span>
+    <span id="last-refresh" class="last-refresh"></span>
+    <button type="button" id="theme" class="quiet">Theme: auto</button>
+    <button type="button" id="forget" class="quiet">Forget token</button>
+  </div>
+</header>
+<div id="banners" class="banners"></div>
+<nav class="sections" aria-label="Sections">
+  <a href="#cluster">Cluster</a>
+  <a href="#groups">Groups and partitions</a>
+  <a href="#live">Live</a>
+  <a href="#databases">Databases</a>
+  <a href="#activity">Activity</a>
+  <a href="#storage">Storage and runtime</a>
+  <a href="#modules">Modules</a>
+  <a href="#keys">Keys</a>
+  <a href="#backup">Backup</a>
+  <a href="#retention">Retention</a>
+  <a href="#work">Queues and timers</a>
+</nav>
+<main id="main">
+  <section id="health" aria-labelledby="health-title">
+    <h2 id="health-title" class="sr-only">Health</h2>
+    <div id="tiles" class="tiles"></div>
+  </section>
+  <section id="cluster" aria-labelledby="cluster-title">
+    <h2 id="cluster-title">Cluster</h2>
+    <div id="cluster-panel"></div>
+  </section>
+  <section id="groups" aria-labelledby="groups-title">
+    <h2 id="groups-title">Groups and partitions</h2>
+    <div id="groups-panel"></div>
+  </section>
+  <section id="live" aria-labelledby="live-title">
+    <h2 id="live-title">Live</h2>
+    <p class="section-note">Sampled on this member at the chosen interval; vertical lines mark term and leader changes (T term · L leader).</p>
+    <div id="charts" class="chart-grid"></div>
+  </section>
+  <div class="pair">
+    <section id="databases" aria-labelledby="databases-title">
+      <h2 id="databases-title">Databases</h2>
+      <div id="databases-panel"></div>
+    </section>
+    <section id="work" aria-labelledby="work-title">
+      <h2 id="work-title">Queues and timers</h2>
+      <div id="work-panel"></div>
+    </section>
+  </div>
+  <section id="activity" aria-labelledby="activity-title">
+    <h2 id="activity-title">Activity</h2>
+    <div id="activity-panel"></div>
+  </section>
+  <section id="storage" aria-labelledby="storage-title">
+    <h2 id="storage-title">Storage and runtime</h2>
+    <div id="storage-grid" class="card-grid"></div>
+  </section>
+  <section id="modules" aria-labelledby="modules-title">
+    <h2 id="modules-title">Modules and deployments</h2>
+    <div id="modules-panel"></div>
+  </section>
+  <div class="pair">
+    <section id="keys" aria-labelledby="keys-title">
+      <h2 id="keys-title">Managed keys</h2>
+      <div id="keys-panel"></div>
+    </section>
+    <section id="backup" aria-labelledby="backup-title">
+      <h2 id="backup-title">Backup</h2>
+      <div id="backup-panel"></div>
+    </section>
+  </div>
+  <section id="retention" aria-labelledby="retention-title">
+    <h2 id="retention-title">Retry retention</h2>
+    <div id="retention-panel"></div>
+  </section>
+  <p class="footnote">Every figure is this member&rsquo;s own view, read from its <code>/v1</code> endpoints with the admin token you entered. The token stays in this tab and is sent only to this origin. Membership changes are read-only here.</p>
+</main>
+
+<dialog id="token-dialog" aria-labelledby="token-title">
+  <form id="token-form" class="dialog-form">
+    <h2 id="token-title">Admin token</h2>
+    <p>This member&rsquo;s operator endpoints need its admin token. It is kept in this tab&rsquo;s session storage only, and sent only to this origin as an <code>Authorization</code> header.</p>
+    <label class="field">Token
+      <input id="token-input" type="password" autocomplete="off" spellcheck="false" required>
+    </label>
+    <p id="token-error" class="panel-error" role="alert"></p>
+    <div class="dialog-actions">
+      <button type="button" id="token-later">Not now</button>
+      <button type="submit" class="primary">Connect</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="confirm-dialog" aria-labelledby="confirm-title">
+  <form id="confirm-form" class="dialog-form">
+    <h2 id="confirm-title"></h2>
+    <div id="confirm-body"></div>
+    <p class="muted small">Request this member will send:</p>
+    <pre id="confirm-request" class="request"></pre>
+    <div class="dialog-actions">
+      <button type="button" id="confirm-cancel">Cancel</button>
+      <button type="submit" id="confirm-ok" class="primary">Confirm</button>
+    </div>
+  </form>
+</dialog>
+</body>
+</html>

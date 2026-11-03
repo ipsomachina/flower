@@ -1,0 +1,591 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Calling Flower from Rust · Flower docs</title>
+  <meta name="description" content="flower-client: calls, typed calls, scoping, credentials, watches and transactions.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://flower.ipsomachina.com/docs/guides/rust-client.html">
+  <meta property="og:title" content="Calling Flower from Rust">
+  <meta property="og:description" content="flower-client: calls, typed calls, scoping, credentials, watches and transactions.">
+  <meta property="og:image" content="https://flower.ipsomachina.com/social.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Flower logo on a white background">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" type="image/svg+xml" href="../../favicon.svg">
+  <link rel="stylesheet" href="../assets/docs.css">
+</head>
+<body data-root="../">
+  <a class="skip-link" href="#content">Skip to content</a>
+  <header class="site-header">
+    <button class="menu-button" id="menu-toggle" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="sidebar"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M3 5.5h14M3 10h14M3 14.5h14"/></svg></button>
+    <a class="brand" href="../index.html"><svg viewBox="0 0 80 80" width="32" height="32" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(0 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(60 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(120 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(180 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(240 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(300 40 40)"/></svg><span class="brand-name">FLOWER</span><span class="brand-docs">Documentation</span></a>
+    <div class="header-spacer"></div>
+    <div class="search" role="search">
+      <input id="search-input" type="search" placeholder="Search" autocomplete="off" spellcheck="false" aria-label="Search the documentation" aria-controls="search-results" aria-expanded="false" role="combobox">
+      <div class="search-results" id="search-results" role="listbox" hidden></div>
+    </div>
+    <a class="header-link" href="../../index.html">Home</a>
+    <a class="header-link" href="https://github.com/ipsomachina/flower">GitHub</a>
+  </header>
+  <div class="scrim" id="scrim" hidden></div>
+  <div class="layout">
+  <nav class="sidebar" id="sidebar" aria-label="Documentation">
+    <h2>Get started</h2>
+    <ul>
+      <li><a href="../index.html">Introduction</a></li>
+      <li><a href="../quickstart.html">Quickstart</a></li>
+    </ul>
+    <h2>Concepts</h2>
+    <ul>
+      <li><a href="../concepts/databases.html">Databases, modules and groups</a></li>
+      <li><a href="../concepts/collections.html">Collections and indexes</a></li>
+      <li><a href="../concepts/methods.html">Queries and mutations</a></li>
+      <li><a href="../concepts/derived.html">Derived values and aggregates</a></li>
+      <li><a href="../concepts/consistency.html">Revisions and consistency</a></li>
+      <li><a href="../concepts/retries.html">Retries and receipts</a></li>
+      <li><a href="../concepts/watches.html">Watches</a></li>
+      <li><a href="../concepts/time.html">Time</a></li>
+      <li><a href="../concepts/queues-timers.html">Queues and timers</a></li>
+      <li><a href="../concepts/modules.html">Modules and interfaces</a></li>
+      <li><a href="../concepts/transactions.html">Transactions and partitions</a></li>
+    </ul>
+    <h2>Guides</h2>
+    <ul>
+      <li><a href="rust-client.html" aria-current="page">Calling Flower from Rust</a></li>
+      <li><a href="sql.html">SQL queries</a></li>
+      <li><a href="errors-retries.html">Errors and retries in clients</a></li>
+      <li><a href="auth.html">Authentication and authorization</a></li>
+      <li><a href="crypto.html">Guest cryptography</a></li>
+      <li><a href="workers.html">Worker queues</a></li>
+      <li><a href="deployments.html">Deployments</a></li>
+      <li><a href="backups.html">Backups and restore</a></li>
+      <li><a href="operations.html">Operating a cluster</a></li>
+      <li><a href="testing.html">Testing applications</a></li>
+    </ul>
+    <h2>Reference</h2>
+    <ul>
+      <li><a href="../reference/http.html">HTTP API</a></li>
+      <li><a href="../reference/cli.html">cargo flower</a></li>
+      <li><a href="../reference/sdk.html">flower-sdk</a></li>
+      <li><a href="../reference/errors.html">Error codes and limits</a></li>
+    </ul>
+  </nav>
+  <div class="main">
+    <main class="content" id="content">
+      <p class="breadcrumb">Guides</p>
+<!-- content -->
+<h1>Calling Flower from Rust</h1>
+<p class="lede"><code>flower-client</code> is an async HTTP client for Flower: plain and typed calls, request IDs and retries, deadlines and cancellation, reconnecting watches, transactions, queue and admin calls.</p>
+
+<h2 id="setup">Setup</h2>
+
+<p>Add the crate by path from your Flower checkout, with Tokio and serde:</p>
+
+<figure class="code">
+<figcaption>Cargo.toml</figcaption>
+<pre><code class="language-toml">[dependencies]
+flower-client = { path = "../flower/crates/flower-client" }
+flower-sdk = { path = "../flower/crates/flower-sdk" }   # for typed calls
+tasks = { path = "../tasks" }                           # your guest crate, for its descriptors
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }</code></pre>
+</figure>
+
+<p>The guest crate builds natively as an <code>rlib</code> (the <a href="../quickstart.html#write-a-module">quickstart</a>'s <code>crate-type = ["cdylib", "rlib"]</code>), so the client can use its declarations for <a href="#typed-calls">typed calls</a>. The default remote client uses reqwest with rustls and does not link the engine or Wasmtime. Enable the <code>replica</code> feature for local sync-down and offline intent queues. A shared interface crate supplies native contract descriptors without linking the provider implementation. On Windows on ARM64, building it needs LLVM's <code>clang</code> on <code>PATH</code>, as for the server.</p>
+
+<h2 id="connecting">Connecting</h2>
+
+<pre><code class="language-rust" data-include="examples/client/src/lib.rs#connect">pub fn connect(token: &amp;str) -&gt; Result&lt;FlowerClient, FlowerError&gt; {
+    FlowerClient::builder("http://127.0.0.1:8080")
+        .credentials(Credentials::token(token))
+        // Retry transient failures, with backoff, and ride out overload.
+        .retry(Retry::Default)
+        // Send writes straight to the leader each reply names.
+        .leader_routing(true)
+        // Each attempt's timeout (the default is 20 s).
+        .timeout(Duration::from_secs(10))
+        .build()
+}</code></pre>
+
+<ul>
+  <li>The client talks to one base URL. Any member works: followers forward writes. With <code>leader_routing(true)</code>, the client remembers the leader each answer names (<code>x-flower-leader-url</code>, per database) and sends writes there directly, falling back to the base URL when the leader stops answering.</li>
+  <li><code>Credentials::token</code> sends <code>Authorization: Bearer …</code>. A token that is not one of the server's own tokens reaches the module's <a href="auth.html">authorization hook</a> as <code>{"bearer": token}</code>; the server's admin token makes the client a trusted gateway. <code>Credentials::from_fn</code> consults a closure on every attempt, for tokens that refresh.</li>
+  <li>Over <code>http://</code> the client speaks HTTP/2 without TLS (h2c) and multiplexes every call over one connection; <code>TransportOptions::new().protocol(Protocol::Http1)</code> switches to HTTP/1.1. Over <code>https://</code> it negotiates HTTP/2 by ALPN and trusts the platform's roots plus any added with <code>.ca_file(path)</code>.</li>
+  <li><strong>Retries are off by default.</strong> <code>.retry(Retry::Default)</code> turns them on for every call; individual calls can override it. See <a href="errors-retries.html">Errors and retries</a>.</li>
+  <li><code>FlowerClient</code> is cheap to clone; clones share connections.</li>
+</ul>
+
+<h2 id="calls">Queries and mutations</h2>
+
+<p><code>query</code> and <code>mutate</code> take any serde-serializable arguments and deserialize the result; <code>query_value</code> and <code>mutate_value</code> work with <code>serde_json::Value</code>. Every call names the database, the module and the method's HTTP name, and the caller picks query or mutation. These calls need nothing from the guest, so they suit scripts and other teams' services; with the guest crate at hand, prefer <a href="#typed-calls">typed calls</a>:</p>
+
+<pre><code class="language-rust" data-include="examples/client/src/lib.rs#calls">#[derive(Serialize)]
+struct AddTask&lt;'a&gt; {
+    id: &amp;'a str,
+    title: &amp;'a str,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct Task {
+    pub title: String,
+    pub done: bool,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct OpenTask {
+    pub id: String,
+    pub title: String,
+}
+
+pub async fn add_and_list(client: &amp;FlowerClient) -&gt; Result&lt;Vec&lt;OpenTask&gt;, FlowerError&gt; {
+    // A request ID chosen per intent: retrying it can never add twice.
+    let options = MutationOptions::new().request_id("add-milk");
+    let args = AddTask {
+        id: "milk",
+        title: "Buy milk",
+    };
+    let added: MutationResult&lt;Task&gt; = client
+        .mutate("demo", "tasks", "add_task", &amp;args, &amp;options)
+        .await?;
+    println!(
+        "{:?} at revision {} (duplicate: {})",
+        added.value, added.revision, added.duplicate
+    );
+
+    let open: QueryResult&lt;Vec&lt;OpenTask&gt;&gt; = client
+        .query(
+            "demo",
+            "tasks",
+            "open_tasks",
+            &amp;json!({}),
+            &amp;RequestOptions::new(),
+        )
+        .await?;
+    Ok(open.value)
+}</code></pre>
+
+<p>A <code>MutationResult</code> carries the request ID, optional read token, method's <code>value</code>, the <code>revision</code> and <code>position</code> it committed at, and <code>duplicate</code> — true when a stored receipt answered a retry. A <code>QueryResult</code> carries the <code>value</code> and, for replica-local queries, the reported <code>staleness</code>; <code>RequestOptions::max_staleness</code> tightens a replica-local query's bound.</p>
+
+<div class="callout">
+<p><span class="callout-title">Request IDs</span> Each <code>mutate</code> call fixes one request ID before its first attempt — yours, or a fresh UUID — so the client's own retries are always safe. To retry safely across calls or process restarts, choose the ID yourself from the intent, persist it, and pass it with <code>request_id</code>. See <a href="../concepts/retries.html">Retries and receipts</a>.</p>
+</div>
+
+<h2 id="durable-commands">Scoped handles and persisted commands</h2>
+<p>Bind the database and module once with <code>client.database("demo").module("tasks")</code>. Query descriptors can be queried or watched; mutation descriptors can be prepared as serializable commands. Shared <code>#[interface]</code> contracts emit native descriptors on their handles and public argument types, without requiring the provider implementation.</p>
+<p>Add <code>client = TasksClient</code> to generate named query methods and <code>prepare_*</code> mutation methods. Bind the facade with <code>TasksApi::client(module)</code>; its public <code>remote</code> backend executes persisted commands. The shared contract still needs only the SDK, including when compiled for Wasm.</p>
+<p>Scoped query builders take <code>QueryOptions</code>; prepared commands and typed transactions take <code>CommandOptions</code>. Both carry delivery settings, while only queries expose staleness and causal bounds. Convert legacy query options with <code>into()</code>, and command options with <code>CommandOptions::try_from(legacy)</code>, which refuses read constraints instead of discarding them.</p>
+<pre><code class="language-rust" data-include="examples/client/src/lib.rs#generated-client">#[flower_sdk::interface(name = "tasks.v1", handle = TasksApi, client = TasksClient)]
+pub trait TasksContract {
+    #[query]
+    fn get_task(
+        ctx: &amp;mut flower_sdk::QueryCtx&lt;'_, '_&gt;,
+        id: String,
+    ) -&gt; flower_sdk::Result&lt;Option&lt;tasks::Task&gt;&gt;;
+    #[mutation]
+    fn add_task(
+        ctx: &amp;mut flower_sdk::MutationCtx&lt;'_, '_&gt;,
+        id: String,
+        title: String,
+    ) -&gt; flower_sdk::Result&lt;tasks::Task&gt;;
+}
+
+pub async fn prepare_with_generated_client(
+    client: &amp;FlowerClient,
+) -&gt; Result&lt;flower_client::PreparedCommand&lt;tasks::Task&gt;, FlowerError&gt; {
+    let tasks = TasksApi::client(client.database("demo").module("tasks"));
+    let current = tasks
+        .get_task(&amp;TasksContractGetTaskArgs { id: "milk".into() })
+        .await
+        .map_err(|error| error.source().clone())?;
+    println!("current value: {:?}", current.value);
+    // Persist the returned command before tasks.remote.execute(...).
+    tasks
+        .prepare_add_task(&amp;TasksContractAddTaskArgs {
+            id: "milk".into(),
+            title: "Buy milk".into(),
+        })
+        .await
+}</code></pre>
+<pre><code class="language-rust" data-include="examples/client/src/lib.rs#durable">/// Prepare once; durably store the serialized command before its first execution.
+pub async fn prepare_task(
+    client: &amp;FlowerClient,
+    id: String,
+    title: String,
+) -&gt; Result&lt;flower_client::PreparedCommand&lt;tasks::Task&gt;, FlowerError&gt; {
+    let operation = ADD_TASK
+        .as_mutation()
+        .map_err(|failure| FlowerError::Decode(failure.message))?;
+    client
+        .database("demo")
+        .module("tasks")
+        .prepare(&amp;operation, &amp;AddTaskArgs { id, title })
+        .await
+}
+
+/// A recovered command retains its identity and returns all commit metadata.
+pub async fn execute_task(
+    client: &amp;FlowerClient,
+    command: &amp;flower_client::PreparedCommand&lt;tasks::Task&gt;,
+) -&gt; Result&lt;
+    flower_client::CommandResult&lt;tasks::Task&gt;,
+    flower_client::CommandError&lt;flower_sdk::Failure&gt;,
+&gt; {
+    client
+        .database("demo")
+        .module("tasks")
+        .execute(command, &amp;CommandOptions::retrying())
+        .await
+}</code></pre>
+<p>Durably store the serialized command before execution and recover that exact command after a crash. Preparation requires initialized retry retention and an established history incarnation. <code>prepare_with_identity</code> supports a previously stored identity offline. <code>CommandResult</code> keeps typed revision and log position counters, the request ID, replay indicator and an optional read token. <code>CommandError</code> keeps the request ID and the underlying failure's execution certainty. A refused redelivery does not resolve a previous delivery whose outcome was unknown.</p>
+<p><code>scope.query(&amp;QUERY, &amp;args).at_least(token).await</code> requires the query to include committed state from that token. Tokens bind database, group and history; <code>command.if_unchanged(&amp;token)</code> checks a database revision precondition. A sync position is a different counter. Missing freshness metadata means unknown staleness.</p>
+<p><code>client.protocol(options).await?.require(&amp;["read_tokens"])</code> checks optional capabilities. Custom transports must preserve headers or explicitly refuse the request. Use <code>TransportOptions::direct()</code> for Flower directly and <code>proxy()</code> for HTTP/1.1 through a plain-HTTP proxy.</p>
+
+<h2 id="workflow-builders">Generated workflow builders</h2>
+<p>Generated mutation methods also return a builder: <code>tasks.add_task(&amp;args).prepare().await</code> prepares an unsent command, while <code>.enqueue(&amp;outbox).await</code> persists it before returning a handle. Deliver the stored command with <code>handle.execute(&amp;options).await</code>. Existing <code>prepare_*</code> methods remain available. Custom backends opt in through the SDK's <code>RemoteCommands</code> trait.</p>
+<pre><code class="language-rust" data-include="examples/client/src/lib.rs#workflow-builders">pub async fn enqueue_with_generated_client(
+    client: &amp;FlowerClient,
+    outbox: &amp;flower_client::CommandOutbox,
+    args: &amp;TasksContractAddTaskArgs,
+) -&gt; Result&lt;
+    flower_client::CommandHandle&lt;tasks::Task&gt;,
+    flower_client::OutboxError&lt;flower_sdk::Failure&gt;,
+&gt; {
+    let tasks = TasksApi::client(client.database("demo").module("tasks"));
+    // Returns only after persistence. Execute this handle to deliver the mutation.
+    tasks.add_task(args).enqueue(outbox).await
+}
+
+pub fn subscribe_with_generated_client(
+    client: &amp;FlowerClient,
+    id: String,
+) -&gt; Result&lt;
+    flower_client::DeclaredSubscription&lt;Option&lt;tasks::Task&gt;, flower_sdk::Failure&gt;,
+    RemoteError&lt;flower_sdk::Failure&gt;,
+&gt; {
+    let tasks = TasksApi::client(client.database("demo").module("tasks"));
+    tasks.get_task(&amp;TasksContractGetTaskArgs { id }).subscribe()
+}</code></pre>
+<p>A query builder supports <code>.watch().await</code> for a single connection and <code>.subscribe()</code> for reconnecting snapshots. Credentials, connect timeout and cancellation carry into the stream. Query causal bounds, staleness, whole-call deadlines and retry overrides are rejected before opening a stream; use the explicit subscription API for reconnect options. Session-bound streams remain unsupported.</p>
+<p><code>RemoteError</code>, <code>CommandError</code> and <code>TransactionError</code> expose <code>declared()</code>, <code>problem()</code> and <code>execution()</code>. Their underlying causes remain available; unknown execution is not evidence of rejection.</p>
+<h2 id="typed-calls">Typed calls and declared errors</h2>
+
+<p>Every <code>#[query]</code> and <code>#[mutation]</code> declares a static descriptor, an <code>Op&lt;Args, T, E&gt;</code>, and a public argument struct. With the guest crate as a dependency, <code>client.call(db, module, &amp;OP, &amp;OpArgs { .. })</code> takes the method's name and kind from the descriptor, encodes the arguments with the SDK's own codec, decodes the result as the method's return type and a failure as the method's error type. A renamed method, a changed argument or a changed result type is then a compile error in the client, not a 404 or a decode failure in production:</p>
+
+<pre><code class="language-rust" data-include="examples/client/src/lib.rs#typed">use doc_snippets::methods::{TRANSFER, TransferArgs, TransferError};
+use tasks::{ADD_TASK, AddTaskArgs, OPEN_TASKS, OpenTasksArgs};
+
+/// The guest crate is a dependency (built as an `rlib` too): each
+/// `#[query]` or `#[mutation]` static carries its name, its kind, its
+/// argument struct, its result type and its declared errors.
+pub async fn add_milk(client: &amp;FlowerClient) -&gt; Result&lt;Vec&lt;tasks::OpenTask&gt;, FlowerError&gt; {
+    let args = AddTaskArgs {
+        id: "milk".to_string(),
+        title: "Buy milk".to_string(),
+    };
+    client
+        .call("demo", "tasks", &amp;ADD_TASK, &amp;args)
+        .await
+        .map_err(|error| error.source().clone())?;
+    client
+        .call("demo", "tasks", &amp;OPEN_TASKS, &amp;OpenTasksArgs {})
+        .await
+        .map_err(|error| error.source().clone())
+}
+
+/// A failure the method declares comes back typed.
+pub async fn pay(client: &amp;FlowerClient, from: &amp;str, amount: u64) -&gt; Result&lt;String, FlowerError&gt; {
+    let args = TransferArgs {
+        from: from.to_string(),
+        to: "merchant".to_string(),
+        amount,
+    };
+    match client.call("bank", "bank", &amp;TRANSFER, &amp;args).await {
+        Ok(left) =&gt; Ok(format!("paid; {left} left")),
+        Err(RemoteError::Declared { error, source }) =&gt; match *error {
+            TransferError::InsufficientFunds(balance) =&gt; {
+                Ok(format!("declined: balance is {balance}"))
+            }
+            _ =&gt; Err(*source),
+        },
+        Err(other) =&gt; Err(other.source().clone()),
+    }
+}
+
+/// `call` sends a mutation under a fresh request ID; `call_with` takes
+/// options. Here the request ID names the payment, so sending it again
+/// answers the first attempt's outcome instead of paying twice.
+pub async fn pay_once(
+    client: &amp;FlowerClient,
+    from: &amp;str,
+    amount: u64,
+) -&gt; Result&lt;u64, RemoteError&lt;TransferError&gt;&gt; {
+    let args = TransferArgs {
+        from: from.to_string(),
+        to: "merchant".to_string(),
+        amount,
+    };
+    let options = MutationOptions::retrying().request_id(format!("pay:{from}:{amount}"));
+    client
+        .call_with("bank", "bank", &amp;TRANSFER, &amp;args, &amp;options)
+        .await
+}</code></pre>
+
+<ul>
+  <li><code>call</code> returns <code>Result&lt;T, RemoteError&lt;E&gt;&gt;</code>. A 422 failure the method's error type accepts comes back as <code>RemoteError::Declared { error, source }</code>, both boxed so the error stays small; anything else — transport, authorization, overload, a code the type does not declare — as <code>RemoteError::Other</code>. <code>source()</code> gives the underlying <code>FlowerError</code> either way. An error type with a <code>#[flower(other)]</code> catch-all accepts every code, so every 422 is <code>Declared</code>.</li>
+  <li><code>call</code> uses default options: a query reads with the consistency it declares, and a mutation runs under a fresh request ID with the client's retry policy. To choose the request ID, an expected revision, a deadline or credentials, use <code>call_with</code> and <code>MutationOptions</code>, as <code>pay_once</code> does; a query takes the options' <code>base</code> (deadline, retries, staleness, credentials). For the whole answer — a mutation's revision, position and <code>duplicate</code> flag — use <code>typed_mutate</code> (below).</li>
+  <li>Without the guest crate — another team's module, say — <code>typed_query</code> and <code>typed_mutate</code> take any <code>FlowerType</code> arguments and result by name, and <code>RemoteTarget::new(module, name)</code> bundles a module and name for the <code>*_at</code> variants. For modules built separately, an <a href="../concepts/modules.html#interface-crates">interface crate</a> gives both sides the same types.</li>
+</ul>
+
+<h2 id="deadlines">Deadlines and cancellation</h2>
+
+<pre><code class="language-rust" data-include="examples/client/src/lib.rs#deadline">pub async fn open_tasks_soon(
+    client: &amp;FlowerClient,
+    cancel: CancellationToken,
+) -&gt; Result&lt;serde_json::Value, FlowerError&gt; {
+    let options = RequestOptions::retrying()
+        // No attempt starts after this, and each is cut to what is left;
+        // the server sheds work queued past it (x-flower-timeout-ms).
+        .deadline(Instant::now() + Duration::from_secs(2))
+        .cancel(cancel);
+    let open = client
+        .query_value("demo", "tasks", "open_tasks", &amp;json!({}), &amp;options)
+        .await?;
+    Ok(open.value)
+}</code></pre>
+
+<p>Every attempt tells the server its remaining budget in <code>x-flower-timeout-ms</code>, so a request still waiting for admission when its caller has given up is dropped rather than run. A cancelled or timed-out <em>mutation</em> may still have committed: retry it with the same request ID.</p>
+
+<h2 id="durable-outbox">Durable command storage and recovery</h2>
+<p><code>CommandOutbox</code> verifies the complete contract and persists a command before allowing delivery. Its pluggable <code>CommandStore</code> supports atomic insert and compare-and-swap generations. <code>FileCommandStore</code> uses a checksummed, synced journal with OS file locking; it repairs a torn final entry and refuses complete-entry corruption. It replays the journal per operation and limits entries to 16 MiB. Use a database backend for larger histories; <code>MemoryCommandStore</code> is an ephemeral test backend.</p>
+<pre><code class="language-rust" data-include="examples/client/src/lib.rs#outbox">pub async fn persist_task(
+    client: &amp;FlowerClient,
+    journal: &amp;std::path::Path,
+    args: &amp;TasksContractAddTaskArgs,
+) -&gt; Result&lt;flower_client::CommandHandle&lt;tasks::Task&gt;, Box&lt;dyn std::error::Error&gt;&gt; {
+    let outbox = flower_client::CommandOutbox::new(Arc::new(
+        flower_client::FileCommandStore::open(journal)?,
+    ));
+    let module = client.database("demo").module("tasks");
+    let command = module.prepare(&amp;TasksApi::ADD_TASK, args).await?;
+    // No mutation has been sent. The returned handle owns the durable workflow.
+    Ok(outbox
+        .enqueue(&amp;module, &amp;TasksApi::ADD_TASK, &amp;command)
+        .await?)
+}
+
+pub async fn recover_task(
+    client: &amp;FlowerClient,
+    journal: &amp;std::path::Path,
+    request_id: &amp;str,
+) -&gt; Result&lt;flower_client::CommandHandle&lt;tasks::Task&gt;, Box&lt;dyn std::error::Error&gt;&gt; {
+    let outbox = flower_client::CommandOutbox::new(Arc::new(
+        flower_client::FileCommandStore::open(journal)?,
+    ));
+    let module = client.database("demo").module("tasks");
+    // Checks the current complete contract; keeps the original request ID.
+    Ok(outbox
+        .resume(&amp;module, &amp;TasksApi::ADD_TASK, request_id)
+        .await?)
+}</code></pre>
+<p>Call <code>handle.execute(&amp;CommandOptions::retrying()).await</code> to submit saved work. <code>status()</code> exposes Pending, Sending, Succeeded, Rejected, Unknown and Unresolved; <code>updates()</code> coalesces local lifecycle snapshots. An abandoned Sending state is uncertain. Explicit <code>retry_uncertain</code> replays the identical ID. Unresolved history or retention requires <code>resolve</code> with evidence of a decided business outcome. A later cancellation does not erase earlier uncertainty.</p>
+<p>Command format 2 carries structural argument, result and declared-error fingerprints. Recovery checks all three schemas, retaining the original scope, ID and revision precondition. Pre-fingerprint snapshots require explicit migration or reconciliation. Fingerprints describe wire contracts, not unchanged business semantics. Credentials and delivery settings are supplied when executing, not persisted with commands.</p>
+
+<h2 id="causal-sessions">Causal sessions</h2>
+<p><code>client.causal_session()</code> opts into a shared unary causal context. Modules and generated clients retain tokens per database and automatically bound later reads by earlier observations. Clones share state. Operations within a database serialize; different databases remain independent. Deadlines and cancellation cover lock waits too. Missing token support or history mismatch causes an error instead of a weaker read.</p>
+<pre><code class="language-rust" data-include="examples/client/src/lib.rs#causal-session">pub async fn causal_roundtrip(
+    client: &amp;FlowerClient,
+    args: &amp;TasksContractAddTaskArgs,
+) -&gt; Result&lt;QueryResult&lt;Option&lt;tasks::Task&gt;&gt;, Box&lt;dyn std::error::Error&gt;&gt; {
+    let session = client.causal_session();
+    let tasks = TasksApi::client(session.database("demo").module("tasks"));
+    let command = tasks.prepare_add_task(args).await?;
+    tasks
+        .remote
+        .execute(&amp;command, &amp;CommandOptions::retrying())
+        .await?;
+    // The session automatically bounds this query by the committed write token.
+    Ok(tasks
+        .get_task(&amp;TasksContractGetTaskArgs {
+            id: args.id.clone(),
+        })
+        .options(
+            flower_client::QueryOptions::new().deadline(Instant::now() + Duration::from_secs(5)),
+        )
+        .await?)
+}</code></pre>
+<p><code>observe(token)</code> imports a commit or watch token; <code>token(db)</code> exports current state. Proved reads and scoped writes can carry history across a move. <code>reset(db)</code> deliberately starts a new context after reconciliation. Tokens stay in memory unless the application persists them. Session-bound watches are refused; use a separate subscription and explicitly observe its tokens.</p>
+
+<h2 id="compatibility">Protocol compatibility and custom transports</h2>
+<p>Typed requirements produce structured reports with missing capabilities, unknown extensions and peer/client versions. <code>inspect_protocol</code> inspects newer peers without accepting their format; a wider requested version range never enables an unimplemented protocol.</p>
+<pre><code class="language-rust" data-include="examples/client/src/lib.rs#compatibility">pub async fn require_causal_peer(
+    client: &amp;FlowerClient,
+) -&gt; Result&lt;flower_client::protocol::ProtocolInfo, flower_client::protocol::NegotiationError&gt; {
+    use flower_client::protocol::{Capability, ProtocolRequirements};
+    client
+        .negotiate(
+            &amp;ProtocolRequirements::requiring([Capability::ReadTokens, Capability::ScopedCommands]),
+            &amp;RequestOptions::new(),
+        )
+        .await
+}</code></pre>
+<p>Enable <code>conformance</code> to check a transport against the reusable HTTP/1.1 and h2c loopback harness. It verifies credentials, bytes, deadlines, causal headers, response metadata, retry hints, incremental streaming and response release on drop. This server dependency is absent from the default client.</p>
+<pre><code class="language-rust" data-include="examples/client/src/lib.rs#transport-conformance">#[tokio::test]
+async fn transport_passes_the_probe_suite() -&gt; Result&lt;(), Box&lt;dyn std::error::Error&gt;&gt; {
+    use flower_client::{HttpTransport, TransportOptions, testing::conformance::ProbeServer};
+    let server = ProbeServer::start().await?;
+    let transport = HttpTransport::with_options(server.base_url(), TransportOptions::direct())?;
+    // Substitute your own Transport here; the same checks apply.
+    server.check(&amp;transport).await.assert_passed();
+    server.shutdown().await;
+    Ok(())
+}</code></pre>
+
+<h2 id="watches">Watches</h2>
+<p>Scoped subscriptions accept query descriptors and retain history identity, reset markers and read tokens. Monotonic suppression restarts when history changes or cannot be proved after reconnect. Terminal errors end the stream; transient errors reconnect with the retry hint. <code>WatchOptions::cancel</code> releases the connection and <code>into_stream()</code> adapts typed watches and subscriptions to futures streams.</p>
+<p>Scoped watches and subscriptions also preserve the query's declared error type: both opening and terminal failures return <code>RemoteError&lt;E&gt;</code>. Inspect <code>error.declared()</code> for a domain failure and <code>error.source()</code> for the original structured failure. Authorization and host failures remain separate. The existing dynamic <code>typed_watch</code> and <code>typed_subscribe</code> APIs remain available.</p>
+<p>Terminal SSE failures now retain the full <code>FlowerError::Http</code> problem, including application failures. Existing code matching <code>Business</code> on terminal events should inspect <code>code()</code> or <code>problem()</code>. Opening failures keep their unary representation.</p>
+
+<p>A watch is a <code>POST /v1/watch</code> carrying the same body as a query, credentials included. <code>subscribe</code> opens one that reconnects by itself — with backoff after errors, at once after a clean end, and after 45 seconds without any bytes — and yields <code>Update { revision, value, reset }</code>. <code>wait_until</code> waits for a query's result to satisfy a predicate:</p>
+
+<pre><code class="language-rust" data-include="examples/client/src/lib.rs#watch">pub async fn follow_open_tasks(client: &amp;FlowerClient) -&gt; Result&lt;(), FlowerError&gt; {
+    let mut subscription = client.subscribe::&lt;Vec&lt;OpenTask&gt;&gt;(
+        "demo",
+        "tasks",
+        "open_tasks",
+        &amp;json!({}),
+        &amp;SubscribeOptions::default(),
+    );
+    while let Some(update) = subscription.next().await {
+        let update = update?;
+        // `reset` marks the first value after (re)connecting.
+        println!(
+            "revision {}: {} open{}",
+            update.revision,
+            update.value.len(),
+            if update.reset {
+                " (fresh snapshot)"
+            } else {
+                ""
+            }
+        );
+    }
+    Ok(())
+}
+
+pub async fn until_all_done(client: &amp;FlowerClient) -&gt; Result&lt;u64, FlowerError&gt; {
+    let done = client
+        .wait_until(
+            "demo",
+            "tasks",
+            "open_tasks",
+            &amp;json!({}),
+            |open: &amp;Vec&lt;OpenTask&gt;| open.is_empty(),
+            &amp;SubscribeOptions::default(),
+        )
+        .await?;
+    Ok(done.revision)
+}</code></pre>
+
+<ul>
+  <li>The client asks for deltas and applies them; you always receive whole values. A patch that does not apply makes it reconnect for a fresh snapshot.</li>
+  <li>After a reconnect, the first update has <code>reset: true</code>. Changes in between may have been coalesced: a watch is the current value, not an event log.</li>
+  <li><code>SubscribeOptions</code> sets the reconnect <code>retry</code> policy, <code>max_reconnects</code>, the <code>stall_timeout</code>, and <code>monotonic</code> to drop updates older than one already seen.</li>
+  <li><code>watch</code>, <code>watch_deltas</code> and <code>typed_watch</code> are single connections without reconnects; <code>typed_subscribe</code> is <code>subscribe</code> with <code>FlowerType</code> codecs.</li>
+  <li>A subscription that the server refuses for good — the method is gone or no longer exposed, the caller is no longer authorized — ends with that error.</li>
+</ul>
+
+<h2 id="transactions">Transactions</h2>
+<p><code>TypedTransaction::new().step(db, module, &amp;mutation, &amp;args)?</code> builds a typed result tuple. Persist the serialized batch before executing; redelivery reuses its request ID. Each database appears once. Compose multiple same-database actions inside a guest mutation. Failures retain the failing step and database, with the callee's details under <code>details.cause</code>.</p>
+<p>The builder also retains a tuple of declared error types. A failure's <code>declared()</code> exposes <code>StepError::Step0(error)</code> through <code>Step7(error)</code>, using the same zero-based index as <code>error.step</code>. When restoring a batch, specify both tuples, such as <code>TypedTransaction&lt;(Invoice, Task), (BillingError, TaskError)&gt;</code>. The legacy one-parameter form keeps dynamic errors.</p>
+
+<pre><code class="language-rust" data-include="examples/client/src/lib.rs#transaction">pub async fn archive(client: &amp;FlowerClient, id: &amp;str) -&gt; Result&lt;TransactionResult, FlowerError&gt; {
+    let steps = vec![
+        TransactionStep {
+            db: "demo".to_string(),
+            module: "tasks".to_string(),
+            method: "complete_task".to_string(),
+            args: json!({"id": id}),
+        },
+        TransactionStep {
+            db: "archive".to_string(),
+            module: "tasks".to_string(),
+            method: "add_task".to_string(),
+            args: json!({"id": id, "title": "archived"}),
+        },
+    ];
+    let options = TransactionOptions {
+        request_id: Some(format!("archive:{id}")),
+        ..TransactionOptions::new()
+    };
+    client.transaction(&amp;steps, &amp;options).await
+}</code></pre>
+
+<p>See <a href="../concepts/transactions.html">Transactions and partitions</a> for the guarantees.</p>
+
+<h3 id="transaction-restoration">Restoring typed transactions</h3>
+<p>Typed transaction snapshots use local format 2 with per-step argument, result and declared-error fingerprints. Build a current typed template and call <code>template.restore(saved)</code>: it checks participant scopes, contracts and saved argument decoding while retaining the saved request ID and arguments.</p>
+<pre><code class="language-rust" data-include="examples/client/src/lib.rs#transaction-restore">pub fn restore_archive_batch(
+    saved: &amp;[u8],
+) -&gt; Result&lt;flower_client::TypedTransaction&lt;(tasks::Task,), (flower_sdk::Failure,)&gt;, FlowerError&gt; {
+    // A freshly built template supplies the current operation and argument decoder.
+    // Its placeholder arguments and fresh ID do not replace the saved work.
+    let template = flower_client::TypedTransaction::new().step(
+        "archive",
+        "tasks",
+        &amp;TasksApi::ADD_TASK,
+        &amp;TasksContractAddTaskArgs {
+            id: String::new(),
+            title: String::new(),
+        },
+    )?;
+    template.restore(saved)
+}</code></pre>
+<p>Execution also checks result/error fingerprints. Direct deserialization cannot check the original argument contract against current operation descriptors; use template restoration for recovery. Format-one snapshots require reconciliation or explicit migration using the original contract. Never prepare a new identity to recover an uncertain transaction. These local format checks do not change the server's transaction receipt retention or provide cross-group recovery parity with the command outbox.</p>
+<h2 id="queues-timers-and-admin">Queues, timers and admin calls</h2>
+
+<p>The same client speaks the worker protocol — <code>claim_queue</code>, <code>heartbeat_queue</code>, <code>report_queue</code>, <code>complete_queue_with</code>, <code>queue_readiness</code>, <code>get_queue_job</code> and more — though you will usually let <a href="workers.html"><code>flower-worker</code></a> drive it. Jobs are only ever enqueued by guest mutations. With the admin token it also deploys and stages modules, changes membership, lists and inspects timers, reads metrics and drives backups; these are the calls <code>cargo flower</code> itself makes.</p>
+
+<h2 id="offline-replicas">Offline replicas</h2>
+
+<p>For devices, the client includes a sync-down replica (<code>SyncClient</code>) that follows a database's log into a local engine and serves reads offline, and an intent queue (<code>IntentQueue</code>) that stores mutations made offline and submits them, in order and under stable request IDs, when the device reconnects. These need the server's sync token.</p>
+<!-- /content -->
+      <nav class="page-nav" aria-label="Previous and next">
+        <a class="prev" href="../concepts/transactions.html" rel="prev">← Transactions and partitions</a>
+        <a class="next" href="sql.html" rel="next">SQL queries →</a>
+      </nav>
+      <footer class="site-footer">
+        <p><a href="https://github.com/ipsomachina/flower">Flower on GitHub</a> · <a href="../../LICENSE">MIT license</a> · <a href="https://ipsomachina.com/privacy">Privacy &amp; legal notice</a></p>
+        <p>© 2026 <a href="https://ipsomachina.com">Ipso Machina</a> · Avenue de Chamonix 3 · 1207 Genève · Switzerland</p>
+      </footer>
+    </main>
+    <nav class="toc" aria-label="On this page">
+      <h2>On this page</h2>
+      <ul>
+        <li class="depth-2"><a href="#setup">Setup</a></li>
+        <li class="depth-2"><a href="#connecting">Connecting</a></li>
+        <li class="depth-2"><a href="#calls">Queries and mutations</a></li>
+        <li class="depth-2"><a href="#durable-commands">Scoped handles and persisted commands</a></li>
+        <li class="depth-2"><a href="#workflow-builders">Generated workflow builders</a></li>
+        <li class="depth-2"><a href="#typed-calls">Typed calls and declared errors</a></li>
+        <li class="depth-2"><a href="#deadlines">Deadlines and cancellation</a></li>
+        <li class="depth-2"><a href="#durable-outbox">Durable command storage and recovery</a></li>
+        <li class="depth-2"><a href="#causal-sessions">Causal sessions</a></li>
+        <li class="depth-2"><a href="#compatibility">Protocol compatibility and custom transports</a></li>
+        <li class="depth-2"><a href="#watches">Watches</a></li>
+        <li class="depth-2"><a href="#transactions">Transactions</a></li>
+        <li class="depth-3"><a href="#transaction-restoration">Restoring typed transactions</a></li>
+        <li class="depth-2"><a href="#queues-timers-and-admin">Queues, timers and admin calls</a></li>
+        <li class="depth-2"><a href="#offline-replicas">Offline replicas</a></li>
+      </ul>
+    </nav>
+  </div>
+  </div>
+  <script src="../assets/search-index.js"></script>
+  <script src="../assets/docs.js"></script>
+</body>
+</html>

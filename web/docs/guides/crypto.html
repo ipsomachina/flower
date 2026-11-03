@@ -1,0 +1,469 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Guest cryptography · Flower docs</title>
+  <meta name="description" content="Hashing, JWT and JWE, WebAuthn ceremonies and managed keys inside guest code.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://flower.ipsomachina.com/docs/guides/crypto.html">
+  <meta property="og:title" content="Guest cryptography">
+  <meta property="og:description" content="Hashing, JWT and JWE, WebAuthn ceremonies and managed keys inside guest code.">
+  <meta property="og:image" content="https://flower.ipsomachina.com/social.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Flower logo on a white background">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" type="image/svg+xml" href="../../favicon.svg">
+  <link rel="stylesheet" href="../assets/docs.css">
+</head>
+<body data-root="../">
+  <a class="skip-link" href="#content">Skip to content</a>
+  <header class="site-header">
+    <button class="menu-button" id="menu-toggle" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="sidebar"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M3 5.5h14M3 10h14M3 14.5h14"/></svg></button>
+    <a class="brand" href="../index.html"><svg viewBox="0 0 80 80" width="32" height="32" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(0 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(60 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(120 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(180 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(240 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(300 40 40)"/></svg><span class="brand-name">FLOWER</span><span class="brand-docs">Documentation</span></a>
+    <div class="header-spacer"></div>
+    <div class="search" role="search">
+      <input id="search-input" type="search" placeholder="Search" autocomplete="off" spellcheck="false" aria-label="Search the documentation" aria-controls="search-results" aria-expanded="false" role="combobox">
+      <div class="search-results" id="search-results" role="listbox" hidden></div>
+    </div>
+    <a class="header-link" href="../../index.html">Home</a>
+    <a class="header-link" href="https://github.com/ipsomachina/flower">GitHub</a>
+  </header>
+  <div class="scrim" id="scrim" hidden></div>
+  <div class="layout">
+  <nav class="sidebar" id="sidebar" aria-label="Documentation">
+    <h2>Get started</h2>
+    <ul>
+      <li><a href="../index.html">Introduction</a></li>
+      <li><a href="../quickstart.html">Quickstart</a></li>
+    </ul>
+    <h2>Concepts</h2>
+    <ul>
+      <li><a href="../concepts/databases.html">Databases, modules and groups</a></li>
+      <li><a href="../concepts/collections.html">Collections and indexes</a></li>
+      <li><a href="../concepts/methods.html">Queries and mutations</a></li>
+      <li><a href="../concepts/derived.html">Derived values and aggregates</a></li>
+      <li><a href="../concepts/consistency.html">Revisions and consistency</a></li>
+      <li><a href="../concepts/retries.html">Retries and receipts</a></li>
+      <li><a href="../concepts/watches.html">Watches</a></li>
+      <li><a href="../concepts/time.html">Time</a></li>
+      <li><a href="../concepts/queues-timers.html">Queues and timers</a></li>
+      <li><a href="../concepts/modules.html">Modules and interfaces</a></li>
+      <li><a href="../concepts/transactions.html">Transactions and partitions</a></li>
+    </ul>
+    <h2>Guides</h2>
+    <ul>
+      <li><a href="rust-client.html">Calling Flower from Rust</a></li>
+      <li><a href="sql.html">SQL queries</a></li>
+      <li><a href="errors-retries.html">Errors and retries in clients</a></li>
+      <li><a href="auth.html">Authentication and authorization</a></li>
+      <li><a href="crypto.html" aria-current="page">Guest cryptography</a></li>
+      <li><a href="workers.html">Worker queues</a></li>
+      <li><a href="deployments.html">Deployments</a></li>
+      <li><a href="backups.html">Backups and restore</a></li>
+      <li><a href="operations.html">Operating a cluster</a></li>
+      <li><a href="testing.html">Testing applications</a></li>
+    </ul>
+    <h2>Reference</h2>
+    <ul>
+      <li><a href="../reference/http.html">HTTP API</a></li>
+      <li><a href="../reference/cli.html">cargo flower</a></li>
+      <li><a href="../reference/sdk.html">flower-sdk</a></li>
+      <li><a href="../reference/errors.html">Error codes and limits</a></li>
+    </ul>
+  </nav>
+  <div class="main">
+    <main class="content" id="content">
+      <p class="breadcrumb">Guides</p>
+<!-- content -->
+<h1>Guest cryptography</h1>
+<p class="lede">Guests hash, sign, verify, encrypt and run passkey ceremonies through the host: no primitive runs in Wasm, and managed secret keys never enter guest memory. Each database keeps its keys in a replicated catalog that operators provision and rotate.</p>
+
+<h2 id="setup">The crypto host</h2>
+
+<p>Every server runs guest crypto: hashing, randomness, JWTs and JWEs with keys the guest supplies, and WebAuthn need no configuration. Every operation goes through <code>ctx.crypto()</code>, which query, mutation and derived contexts all offer; it borrows the context, so create one, use it and drop it. Bytes are plain Rust slices; <code>hex_encode</code>/<code>hex_decode</code> and <code>webauthn::base64url_encode</code>/<code>base64url_decode</code> convert for the wire. Crypto failures are ordinary failures you can map to your own codes, not traps.</p>
+
+<p><a href="#managed-keys">Managed keys</a> are the one part that needs an operator. Each database's catalog is sealed by a 32-byte <strong>wrapping key</strong> that every member mounts:</p>
+
+<pre><code class="language-bash">head -c 32 /dev/urandom &gt; wrapping.key        # keep it secret, back it up
+cargo flower serve --dir data --id 1 --bootstrap 1 --admin-token secret \
+  --key-wrapping-file wrapping.key</code></pre>
+
+<p>A member started without one still applies the catalogs it replicates, but serves no catalog key: guests calling a managed key there fail <code>KEYS_LOCKED</code>, and key changes sent to it answer 503 <code>KEYS_LOCKED</code>: retry once a member that has the key leads. Everything else keeps working.</p>
+
+<h2 id="determinism">Hashing and randomness</h2>
+
+<pre><code class="language-rust" data-include="examples/snippets/src/crypto.rs#digest">/// Hashing is deterministic, so queries may do it.
+#[query(http)]
+pub fn fingerprint(ctx: &amp;mut QueryCtx&lt;'_, '_&gt;, text: String) -&gt; Result&lt;String&gt; {
+    let digest = ctx.crypto().sha256(text.as_bytes())?;
+    Ok(hex_encode(&amp;digest))
+}
+
+/// Entropy is for mutations only: their outcome is decided once, on
+/// the leader, and replicated.
+#[mutation(http)]
+pub fn new_api_key(ctx: &amp;mut MutationCtx&lt;'_, '_&gt;) -&gt; Result&lt;String&gt; {
+    let bytes = ctx.crypto().random_bytes(32)?;
+    Ok(base64url_encode(&amp;bytes))
+}</code></pre>
+
+<p>Everything except randomness is deterministic, so queries, derived values and authorization hooks can hash, verify and decrypt. <code>random_bytes</code> (at most 1,024 bytes a call) and anything that draws randomness — key pairs, WebAuthn challenges, JWE without an explicit nonce — works only in mutations; elsewhere it fails with <code>INVALID_INVOCATION</code>. A mutation's random output is decided once on the leader and replicated, like the rest of its effects.</p>
+
+<h2 id="managed-keys">Managed keys</h2>
+
+<p>A module <strong>declares</strong> the keys it uses by an alias, an algorithm and the usages it needs. An operator <strong>generates</strong> (or imports) a key in the database's catalog and <strong>binds</strong> it to that alias, granting usages. Both sides must agree: an undeclared alias fails <code>FORBIDDEN_USAGE</code>, an unbound one <code>UNKNOWN_KEY</code> (<code>managed key "tickets" is not bound</code>).</p>
+
+<pre><code class="language-rust" data-include="examples/snippets/src/crypto.rs#declare">/// The keys this module uses, by the alias an operator binds. Each is a
+/// component: list it among the app's components. A declaration grants
+/// nothing by itself: the binding must exist and grant the same usages.
+pub static TICKETS: KeyDeclaration = KeyDeclaration::new(
+    "tickets",
+    Algorithm::Ed25519,
+    &amp;[Usage::Sign, Usage::Verify, Usage::PublicKey],
+);
+
+pub static VAULT: KeyDeclaration = KeyDeclaration::new(
+    "vault",
+    Algorithm::A256Gcm,
+    &amp;[Usage::Encrypt, Usage::Decrypt],
+);</code></pre>
+
+<p>Each declaration is a component; list it with the rest:</p>
+
+<pre><code class="language-rust" data-include="examples/snippets/src/crypto.rs#app">pub static APP: App = App::new(&amp;[
+    &amp;TICKETS,
+    &amp;VAULT,
+    &amp;Challenges,
+    &amp;Passkeys,
+    &amp;FINGERPRINT,
+    &amp;NEW_API_KEY,
+    &amp;ISSUE_TICKET,
+    &amp;TICKET_HOLDER,
+    &amp;TICKET_KEY,
+    &amp;SEAL,
+    &amp;UNSEAL,
+    &amp;BEGIN_REGISTRATION,
+    &amp;FINISH_REGISTRATION,
+    &amp;BEGIN_SIGN_IN,
+    &amp;FINISH_SIGN_IN,
+]);</code></pre>
+
+<p>The operator side, with the admin token, names the database whose catalog it changes (<code>--db</code>, before or after the subcommand):</p>
+
+<pre><code class="language-bash">export FLOWER_ADMIN_TOKEN=secret
+cargo flower keys --db app generate --name ticket-signing --algorithm Ed25519
+cargo flower keys --db app generate --name vault-2026 --algorithm A256GCM
+cargo flower keys --db app bind --alias tickets --key ticket-signing --usages sign,verify,publicKey
+cargo flower keys --db app bind --alias vault --key vault-2026 --usages encrypt,decrypt
+cargo flower keys --db app</code></pre>
+
+<p>Each change prints its request ID and the catalog's new revision, then the catalog; the listing alone is:</p>
+
+<pre><code class="language-console">key=ticket-signing algorithm=Ed25519 active=1 versions=1:live
+key=vault-2026 algorithm=A256GCM active=1 versions=1:live
+binding=tickets key=ticket-signing usages=publicKey,sign,verify
+binding=vault key=vault-2026 usages=decrypt,encrypt</code></pre>
+
+<p>A change is replicated through the database's group and runs under a request ID: pass <code>--request-id</code> to retry one safely. <code>keys import</code> seals existing key material locally with the wrapping key before sending it, so it never travels in the clear. Without <code>--db</code>, <code>keys</code> lists every database's catalog.</p>
+
+<p>To separate offline preparation from online import, seal on the machine holding the wrapping key, then import the envelope on an operator machine:</p>
+<pre><code class="language-bash">cargo flower keys seal --key-file private.key --wrapping-file wrapping.key --out sealed.json
+cargo flower keys --db shop --request-id import-boxes import --name boxes --algorithm X25519 --sealed-file sealed.json</code></pre>
+<p>Concurrent cold uses of the same managed key share one native preparation when the coordination fits <code>--key-cache-bytes</code>. Full or zero budgets fall back to independent preparation without refusing crypto. Each call still checks the current binding and lifecycle; the cache grants no authority.</p>
+
+<p>Managed X25519 keys also support <code>crypto.nacl().box_before_managed(&amp;peer, &amp;key, ManagedKeyRef::Current)</code>. It returns a non-exportable shared-key handle for <code>box_after</code> and <code>box_open_after</code>. Derivation requires <code>derive</code>; each use additionally requires <code>encrypt</code> or <code>decrypt</code>. Handles live only for that invocation, share a 1 MiB native memory budget, and cannot be serialized. Rotation stops old handles encrypting while allowing decryption; revocation stops both.</p>
+
+<table>
+  <thead><tr><th>Algorithm</th><th>Usages</th><th>Operations</th></tr></thead>
+  <tbody>
+    <tr><td><code>Ed25519</code></td><td>sign, verify, publicKey</td><td>signatures, JWT EdDSA, NaCl signing</td></tr>
+    <tr><td><code>P256</code></td><td>sign, verify, publicKey</td><td>signatures, JWT ES256</td></tr>
+    <tr><td><code>Rsa</code> (2048–8192 bits)</td><td>sign, verify, publicKey</td><td>PKCS#1 v1.5 SHA-256 signatures, JWT RS256</td></tr>
+    <tr><td><code>Hs256</code></td><td>sign, verify</td><td>MACs, JWT HS256</td></tr>
+    <tr><td><code>A256Gcm</code></td><td>encrypt, decrypt</td><td>JWE <code>dir</code>/<code>A256GCM</code></td></tr>
+    <tr><td><code>XSalsa20Poly1305</code></td><td>encrypt, decrypt</td><td>NaCl secretbox</td></tr>
+    <tr><td><code>X25519</code></td><td>encrypt, decrypt, derive, publicKey</td><td>NaCl box</td></tr>
+  </tbody>
+</table>
+
+<p><strong>Rotation.</strong> Each key has numbered versions, one active. <code>keys rotate</code> adds a new active version; signing and encrypting use it from then on. Older versions keep verifying and decrypting until an operator <code>retire</code>s (verify and decrypt only), <code>revoke</code>s (nothing) or <code>destroy</code>s them. JWTs carry the version in their <code>kid</code> (<code>flower.&lt;key id&gt;.&lt;version&gt;</code>), so tokens issued before a rotation keep verifying.</p>
+
+<p><strong>Isolation.</strong> Each database has its own catalog. A key generated and bound in <code>app</code> does not exist in any other database, even one in the same group: the same module deployed into another database answers <code>UNKNOWN_KEY</code> until that database's own catalog binds the alias.</p>
+
+<p>Results that used a managed key are never served from the query cache, and any catalog change re-evaluates derived values, watches and authorization decisions that used a key — so revoking a key takes effect everywhere at once.</p>
+
+<h2 id="jwt">Signed tokens (JWT)</h2>
+
+<pre><code class="language-rust" data-include="examples/snippets/src/crypto.rs#jwt">/// Issue a signed ticket under the `tickets` key's active version.
+#[mutation(http)]
+pub fn issue_ticket(ctx: &amp;mut MutationCtx&lt;'_, '_&gt;, guest: String) -&gt; Result&lt;String&gt; {
+    let now = ctx.clock()?;
+    let mut claims = BTreeMap::new();
+    claims.insert(String::from("iss"), Value::String(String::from(ISSUER)));
+    claims.insert(String::from("sub"), Value::String(guest));
+    claims.insert(String::from("iat"), Value::Number((now / 1000.0).floor()));
+    claims.insert(
+        String::from("exp"),
+        Value::Number((now / 1000.0).floor() + 3600.0),
+    );
+    let key = TICKETS.key()?;
+    // The binding fixes the algorithm (EdDSA) and the `kid` header.
+    ctx.crypto()
+        .jwt()
+        .sign(&amp;Value::Object(claims), &amp;key, &amp;SignOptions::default())
+}
+
+/// Check a ticket: the token's `kid` picks the key version, so tickets
+/// issued before a rotation keep verifying until that version is
+/// revoked. The answer is cached until the ticket expires.
+#[query(http)]
+pub fn ticket_holder(ctx: &amp;mut QueryCtx&lt;'_, '_&gt;, ticket: String) -&gt; Result&lt;String&gt; {
+    let key = TICKETS.key()?;
+    let options = VerifyOptions {
+        validation: ValidationOptions {
+            issuer: Some(String::from(ISSUER)),
+            ..ValidationOptions::default()
+        },
+        ..VerifyOptions::default()
+    };
+    let verified = ctx
+        .crypto()
+        .jwt()
+        .verify(&amp;ticket, &amp;key, &amp;options)
+        .map_err(|failure| fail("INVALID_TICKET", failure.message))?;
+    match verified.claims {
+        Value::Object(claims) =&gt; match claims.get("sub") {
+            Some(Value::String(subject)) =&gt; Ok(subject.clone()),
+            _ =&gt; Err(fail("INVALID_TICKET", "the ticket names no guest")),
+        },
+        _ =&gt; Err(fail("INVALID_TICKET", "the ticket has no claims")),
+    }
+}
+
+#[derive(FlowerType, Clone, Debug, PartialEq)]
+pub struct PublicKey {
+    pub kid: String,
+    /// Ed25519: the raw 32-byte key, base64url.
+    pub x: String,
+}
+
+/// Publish the verification key so others can check tickets with any
+/// JOSE library (wrap it in a JWKS document as they expect).
+#[query(http)]
+pub fn ticket_key(ctx: &amp;mut QueryCtx&lt;'_, '_&gt;) -&gt; Result&lt;PublicKey&gt; {
+    let key = TICKETS.key()?;
+    let mut crypto = ctx.crypto();
+    let (_, kid) = crypto.managed_version(&amp;key)?;
+    let public = crypto.managed_public_key(&amp;key, ManagedKeyRef::Current)?;
+    Ok(PublicKey {
+        kid,
+        x: base64url_encode(&amp;public),
+    })
+}</code></pre>
+
+<p>A ticket's protected header names the binding's algorithm and the version that signed it:</p>
+
+<pre><code class="language-json">{"alg":"EdDSA","kid":"flower.kVmQNyYF7VeHo0uqfYzyIQ.1","typ":"JWT"}</code></pre>
+
+<pre><code class="language-json">{"ok":true,"value":"ada"}                                                       // ticket_holder
+{"ok":true,"value":{"kid":"flower.kVmQNyYF7VeHo0uqfYzyIQ.1","x":"sOCdOyVfLhz-zEL-F7eeTRE2geKUoQQXNi9hjGUlbAE"}}   // ticket_key</code></pre>
+
+<ul>
+  <li>With a managed key, the binding fixes the algorithm and the <code>kid</code>. With raw keys — <code>JwtKey::Bytes(secret, KeyFormat::Raw)</code> for HS256 (at least 32 bytes), <code>KeyFormat::Der</code> or <code>JwtKey::Pem</code> for public keys — signing needs <code>SignOptions::algorithm</code> and verifying a non-empty <code>VerifyOptions::algorithms</code> allowlist: the token's own <code>alg</code> never decides.</li>
+  <li>Verification checks <code>exp</code> (required unless <code>require_expiration: Some(false)</code>), <code>nbf</code>, and, when you ask, <code>iss</code>, <code>sub</code> and <code>typ</code>. The audience must be validated explicitly: a token carrying <code>aud</code> fails unless you set <code>audience</code>. Check custom claims yourself.</li>
+  <li>Verification does not poll the clock. It declares when its answer changes — at <code>exp</code> for a valid token — so a query checking a token is cached, and its watches hold, until then.</li>
+  <li>Failures come back as <code>CRYPTO_ERROR</code> with messages such as <code>JWT expired</code>; map them to your own codes, as <code>ticket_holder</code> does.</li>
+</ul>
+
+<h2 id="jwe">Encrypted tokens (JWE)</h2>
+
+<pre><code class="language-rust" data-include="examples/snippets/src/crypto.rs#jwe">/// Seal a value for later, readable only through this module.
+#[mutation(http)]
+pub fn seal(ctx: &amp;mut MutationCtx&lt;'_, '_&gt;, secret: String) -&gt; Result&lt;String&gt; {
+    let now = ctx.clock()?;
+    let mut claims = BTreeMap::new();
+    claims.insert(String::from("secret"), Value::String(secret));
+    claims.insert(
+        String::from("exp"),
+        Value::Number((now / 1000.0).floor() + 86_400.0),
+    );
+    let key = VAULT.key()?;
+    // `None`: a fresh random nonce, which is why this is a mutation.
+    ctx.crypto()
+        .jwt()
+        .encrypt(&amp;Value::Object(claims), &amp;key, None, &amp;Default::default())
+}
+
+#[query(http)]
+pub fn unseal(ctx: &amp;mut QueryCtx&lt;'_, '_&gt;, token: String) -&gt; Result&lt;Value&gt; {
+    let key = VAULT.key()?;
+    let opened = ctx
+        .crypto()
+        .jwt()
+        .decrypt(&amp;token, &amp;key, &amp;ValidationOptions::default())?;
+    Ok(opened.claims)
+}</code></pre>
+
+<p>Only compact <code>dir</code> + <code>A256GCM</code> is supported, with a managed <code>A256Gcm</code> key or a raw 32-byte key. Pass an explicit 12-byte nonce to encrypt outside a mutation, and never reuse one under the same key. <code>decrypt</code> validates standard claims like <code>verify</code>.</p>
+
+<h2 id="webauthn">Passkeys (WebAuthn)</h2>
+
+<p>A WebAuthn ceremony takes two mutations: one creates options with a fresh challenge and stores it, the other consumes the challenge and verifies the browser's response.</p>
+
+<pre><code class="language-rust" data-include="examples/snippets/src/crypto.rs#webauthn">const RP_ID: &amp;str = "example.com";
+const ORIGIN: &amp;str = "https://example.com";
+
+/// Step 1: options for `navigator.credentials.create()`. The challenge
+/// is random, so this is a mutation, and it is stored for step 2.
+#[mutation(http)]
+pub fn begin_registration(
+    ctx: &amp;mut MutationCtx&lt;'_, '_&gt;,
+    user_handle: String,
+    name: String,
+) -&gt; Result&lt;Value&gt; {
+    let init = RegistrationInit {
+        rp: RelyingParty {
+            id: String::from(RP_ID),
+            name: String::from("Example"),
+        },
+        user: RegistrationUser {
+            // An opaque base64url handle (1–64 bytes), never an email.
+            id: user_handle.clone(),
+            name,
+            display_name: None,
+        },
+        ..RegistrationInit::default()
+    };
+    let options = ctx.crypto().webauthn().registration_options(&amp;init)?;
+    let expires_at = ctx.clock()? + 300_000.0;
+    let challenge = Challenge {
+        value: options.challenge.clone(),
+        expires_at,
+    };
+    Challenges::set(ctx, &amp;user_handle, &amp;challenge)?;
+    Ok(options.to_value())
+}
+
+/// Step 2: verify the browser's `PublicKeyCredential.toJSON()` text,
+/// consuming the challenge, and store the credential.
+#[mutation(http)]
+pub fn finish_registration(
+    ctx: &amp;mut MutationCtx&lt;'_, '_&gt;,
+    user_handle: String,
+    response: String,
+) -&gt; Result&lt;String&gt; {
+    let Some(challenge) = Challenges::get(ctx, &amp;user_handle)? else {
+        return Err(fail("NO_CHALLENGE", "start the registration again"));
+    };
+    Challenges::delete(ctx, &amp;user_handle)?;
+    if ctx.clock()? &gt; challenge.expires_at {
+        return Err(fail("CHALLENGE_EXPIRED", "start the registration again"));
+    }
+    let options = RegistrationOptions {
+        // Verify under the policy the options asked for.
+        user_verification: UserVerification::Required,
+        ..RegistrationOptions::new(&amp;challenge.value, ORIGIN, RP_ID)
+    };
+    let registration = ctx
+        .crypto()
+        .webauthn()
+        .verify_registration(&amp;response, &amp;options)?;
+    let credential = registration.credential;
+    let passkey = Passkey {
+        user: user_handle,
+        public_key: credential.public_key.clone(),
+        sign_count: credential.sign_count,
+    };
+    Passkeys::set(ctx, &amp;credential.id, &amp;passkey)?;
+    Ok(credential.id)
+}
+
+/// Sign-in, step 2 (step 1 stores a challenge from
+/// `authentication_options`, as above): check the assertion and keep
+/// the new signature counter.
+#[mutation(http)]
+pub fn finish_sign_in(
+    ctx: &amp;mut MutationCtx&lt;'_, '_&gt;,
+    credential_id: String,
+    challenge: String,
+    response: String,
+) -&gt; Result&lt;String&gt; {
+    let Some(mut passkey) = Passkeys::get(ctx, &amp;credential_id)? else {
+        return Err(fail("UNKNOWN_PASSKEY", "no such passkey"));
+    };
+    let options = AuthenticationOptions {
+        challenge,
+        origins: alloc::vec![String::from(ORIGIN)],
+        rp_id: String::from(RP_ID),
+        user_verification: UserVerification::Required,
+        credential: StoredCredential {
+            id: credential_id.clone(),
+            public_key: passkey.public_key.clone(),
+            sign_count: passkey.sign_count,
+            user_handle: Some(passkey.user.clone()),
+        },
+    };
+    let signed_in = ctx
+        .crypto()
+        .webauthn()
+        .verify_authentication(&amp;response, &amp;options)?;
+    passkey.sign_count = signed_in.sign_count;
+    let user = passkey.user.clone();
+    Passkeys::set(ctx, &amp;credential_id, &amp;passkey)?;
+    Ok(user)
+}</code></pre>
+
+<p><code>begin_registration</code> returns <code>PublicKeyCredentialCreationOptionsJSON</code> for the browser:</p>
+
+<pre><code class="language-json">{"attestation":"none","authenticatorSelection":{"requireResidentKey":true,"residentKey":"required","userVerification":"required"},
+ "challenge":"_hMdwFGw8RlggxK4GkP2HjWBfOWnNbAIqt2x48x_mZQ","excludeCredentials":[],
+ "pubKeyCredParams":[{"alg":-8,"type":"public-key"},{"alg":-7,"type":"public-key"},{"alg":-257,"type":"public-key"}],
+ "rp":{"id":"example.com","name":"Example"}, …}</code></pre>
+
+<ul>
+  <li>The option builders default to discoverable credentials, required user verification and no attestation, offering EdDSA, ES256 and RS256. <code>RegistrationOptions::new</code> defaults to <em>preferred</em> user verification, so set it to match the options, as above.</li>
+  <li>The host checks the challenge, the exact origin, the RP ID hash, user presence and verification, the credential algorithm and the signature. Attestation statements other than <code>none</code> are not evaluated.</li>
+  <li>Store <code>sign_count</code> after each sign-in. If the stored or new counter is non-zero, the new one must be greater, or verification fails with <code>WEBAUTHN_COUNTER</code> (a possibly cloned authenticator). Synced passkeys usually report zero.</li>
+  <li>Challenges must be single-use. The host only compares; deleting the stored challenge, as the mutations above do, is what prevents replay.</li>
+  <li><code>flower_sdk::crypto::webauthn::Authentication</code> (a result) and <code>flower_sdk::auth::Authentication</code> (the hook mode) share a name: import one under another name if you need both.</li>
+</ul>
+
+<h2 id="other-primitives">Other primitives</h2>
+
+<ul>
+  <li><strong>NaCl</strong> (<code>crypto.nacl()</code>): secretbox, box, Ed25519 signing and detached signatures with explicit 24-byte nonces, SHA-512, and constant-time comparison, in NaCl's byte layouts.</li>
+  <li><strong>Raw managed operations</strong>: <code>managed_sign</code>, <code>managed_verify</code>, <code>managed_public_key</code> and <code>managed_version</code> on any declared key, plus typed shortcuts for managed Ed25519 keys: <code>sign</code>, <code>verify</code> and <code>public_key</code> (which also reads an X25519 key).</li>
+</ul>
+
+<p>There is no HMAC with a raw key (use a managed <code>Hs256</code> key) and no JWKS fetching (guests have no network). Error codes: <code>CRYPTO_ERROR</code>, <code>UNKNOWN_KEY</code>, <code>UNKNOWN_VERSION</code>, <code>FORBIDDEN_USAGE</code>, <code>KEYS_LOCKED</code> (the member has no wrapping key mounted), <code>KEY_REVOKED</code>, <code>KEY_DESTROYED</code>, <code>WEBAUTHN_COUNTER</code>; see <a href="../reference/errors.html">Error codes</a>.</p>
+<!-- /content -->
+      <nav class="page-nav" aria-label="Previous and next">
+        <a class="prev" href="auth.html" rel="prev">← Authentication and authorization</a>
+        <a class="next" href="workers.html" rel="next">Worker queues →</a>
+      </nav>
+      <footer class="site-footer">
+        <p><a href="https://github.com/ipsomachina/flower">Flower on GitHub</a> · <a href="../../LICENSE">MIT license</a> · <a href="https://ipsomachina.com/privacy">Privacy &amp; legal notice</a></p>
+        <p>© 2026 <a href="https://ipsomachina.com">Ipso Machina</a> · Avenue de Chamonix 3 · 1207 Genève · Switzerland</p>
+      </footer>
+    </main>
+    <nav class="toc" aria-label="On this page">
+      <h2>On this page</h2>
+      <ul>
+        <li class="depth-2"><a href="#setup">The crypto host</a></li>
+        <li class="depth-2"><a href="#determinism">Hashing and randomness</a></li>
+        <li class="depth-2"><a href="#managed-keys">Managed keys</a></li>
+        <li class="depth-2"><a href="#jwt">Signed tokens (JWT)</a></li>
+        <li class="depth-2"><a href="#jwe">Encrypted tokens (JWE)</a></li>
+        <li class="depth-2"><a href="#webauthn">Passkeys (WebAuthn)</a></li>
+        <li class="depth-2"><a href="#other-primitives">Other primitives</a></li>
+      </ul>
+    </nav>
+  </div>
+  </div>
+  <script src="../assets/search-index.js"></script>
+  <script src="../assets/docs.js"></script>
+</body>
+</html>

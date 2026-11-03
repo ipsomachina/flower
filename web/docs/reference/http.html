@@ -1,0 +1,389 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>HTTP API · Flower docs</title>
+  <meta name="description" content="Every endpoint, header, status code and the error body.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://flower.ipsomachina.com/docs/reference/http.html">
+  <meta property="og:title" content="HTTP API">
+  <meta property="og:description" content="Every endpoint, header, status code and the error body.">
+  <meta property="og:image" content="https://flower.ipsomachina.com/social.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Flower logo on a white background">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" type="image/svg+xml" href="../../favicon.svg">
+  <link rel="stylesheet" href="../assets/docs.css">
+</head>
+<body data-root="../">
+  <a class="skip-link" href="#content">Skip to content</a>
+  <header class="site-header">
+    <button class="menu-button" id="menu-toggle" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="sidebar"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M3 5.5h14M3 10h14M3 14.5h14"/></svg></button>
+    <a class="brand" href="../index.html"><svg viewBox="0 0 80 80" width="32" height="32" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(0 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(60 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(120 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(180 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(240 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(300 40 40)"/></svg><span class="brand-name">FLOWER</span><span class="brand-docs">Documentation</span></a>
+    <div class="header-spacer"></div>
+    <div class="search" role="search">
+      <input id="search-input" type="search" placeholder="Search" autocomplete="off" spellcheck="false" aria-label="Search the documentation" aria-controls="search-results" aria-expanded="false" role="combobox">
+      <div class="search-results" id="search-results" role="listbox" hidden></div>
+    </div>
+    <a class="header-link" href="../../index.html">Home</a>
+    <a class="header-link" href="https://github.com/ipsomachina/flower">GitHub</a>
+  </header>
+  <div class="scrim" id="scrim" hidden></div>
+  <div class="layout">
+  <nav class="sidebar" id="sidebar" aria-label="Documentation">
+    <h2>Get started</h2>
+    <ul>
+      <li><a href="../index.html">Introduction</a></li>
+      <li><a href="../quickstart.html">Quickstart</a></li>
+    </ul>
+    <h2>Concepts</h2>
+    <ul>
+      <li><a href="../concepts/databases.html">Databases, modules and groups</a></li>
+      <li><a href="../concepts/collections.html">Collections and indexes</a></li>
+      <li><a href="../concepts/methods.html">Queries and mutations</a></li>
+      <li><a href="../concepts/derived.html">Derived values and aggregates</a></li>
+      <li><a href="../concepts/consistency.html">Revisions and consistency</a></li>
+      <li><a href="../concepts/retries.html">Retries and receipts</a></li>
+      <li><a href="../concepts/watches.html">Watches</a></li>
+      <li><a href="../concepts/time.html">Time</a></li>
+      <li><a href="../concepts/queues-timers.html">Queues and timers</a></li>
+      <li><a href="../concepts/modules.html">Modules and interfaces</a></li>
+      <li><a href="../concepts/transactions.html">Transactions and partitions</a></li>
+    </ul>
+    <h2>Guides</h2>
+    <ul>
+      <li><a href="../guides/rust-client.html">Calling Flower from Rust</a></li>
+      <li><a href="../guides/sql.html">SQL queries</a></li>
+      <li><a href="../guides/errors-retries.html">Errors and retries in clients</a></li>
+      <li><a href="../guides/auth.html">Authentication and authorization</a></li>
+      <li><a href="../guides/crypto.html">Guest cryptography</a></li>
+      <li><a href="../guides/workers.html">Worker queues</a></li>
+      <li><a href="../guides/deployments.html">Deployments</a></li>
+      <li><a href="../guides/backups.html">Backups and restore</a></li>
+      <li><a href="../guides/operations.html">Operating a cluster</a></li>
+      <li><a href="../guides/testing.html">Testing applications</a></li>
+    </ul>
+    <h2>Reference</h2>
+    <ul>
+      <li><a href="http.html" aria-current="page">HTTP API</a></li>
+      <li><a href="cli.html">cargo flower</a></li>
+      <li><a href="sdk.html">flower-sdk</a></li>
+      <li><a href="errors.html">Error codes and limits</a></li>
+    </ul>
+  </nav>
+  <div class="main">
+    <main class="content" id="content">
+      <p class="breadcrumb">Reference</p>
+<!-- content -->
+<h1>HTTP API</h1>
+<p class="lede">Every member serves the same API on one port, over HTTP/1.1 and HTTP/2 (cleartext h2c, or h2 over TLS). Request bodies are JSON with <code>Content-Type: application/json</code>; answers are JSON unless noted. Every exchange on this page was recorded against a release node.</p>
+
+<h2 id="overview">Endpoints</h2>
+
+<table>
+  <thead><tr><th>Endpoint</th><th>Credential</th><th>Purpose</th></tr></thead>
+  <tbody>
+    <tr><td><span class="method">POST</span><a href="#query"><code>/v1/query</code></a></td><td>none¹</td><td>Run a query.</td></tr>
+    <tr><td><span class="method">POST</span><a href="#mutate"><code>/v1/mutate</code></a></td><td>none¹</td><td>Run a mutation.</td></tr>
+    <tr><td><span class="method">POST</span><a href="#transaction"><code>/v1/transaction</code></a></td><td>none¹</td><td>Run mutations in several databases atomically.</td></tr>
+    <tr><td><span class="method">POST</span><a href="#watch"><code>/v1/watch</code></a></td><td>none¹</td><td>Watch a query (server-sent events).</td></tr>
+    <tr><td><span class="method">GET</span><a href="#retry"><code>/v1/retry</code></a></td><td>none</td><td>The database's retry identity, for scoped request IDs.</td></tr>
+    <tr><td><span class="method">POST</span><a href="#retry"><code>/v1/retry/session</code></a></td><td>none¹</td><td>Open, inspect, acknowledge and close retry sessions.</td></tr>
+    <tr><td><span class="method">GET</span><a href="#health"><code>/v1/status</code></a>, <code>/health/live</code>, <code>/health/ready</code></td><td>none</td><td>Raft status, liveness, readiness.</td></tr>
+    <tr><td><span class="method">POST</span><a href="#queues"><code>/v1/queue/…</code></a></td><td>worker</td><td>Claim, renew and report queue jobs.</td></tr>
+    <tr><td><span class="method">GET</span><a href="#timers"><code>/v1/timer/…</code></a></td><td>admin</td><td>Inspect and maintain timers.</td></tr>
+    <tr><td><span class="method">POST</span><a href="#admin"><code>/v1/deploy</code></a>, <code>/v1/admin/…</code>, <code>/v1/metrics</code></td><td>admin</td><td>Operator endpoints.</td></tr>
+    <tr><td><span class="method">GET</span><code>/v1/sync</code></td><td>sync</td><td>Log sync for device replicas (internal format).</td></tr>
+    <tr><td><span class="method">GET</span><code>/admin</code></td><td>none²</td><td>The admin dashboard.</td></tr>
+  </tbody>
+</table>
+
+<p>¹ The module's authorization component decides; see <a href="#credentials">credentials</a>. ² The page itself is static; it asks for the admin token to call the API.</p>
+
+<p>Calls name a method by its <em>HTTP name</em>: the definition's name, for a definition whose declaration opts into HTTP (<code>#[query(http)]</code>, <code>Method::http()</code>, <code>Transaction::http()</code>, an interface provider's <code>COMPONENT.http()</code>, <code>external!(…, http)</code>). Every other definition answers <code>404 UNKNOWN_METHOD</code> here, whatever its access; see <a href="../concepts/methods.html#options">method options</a>.</p>
+
+<h2 id="credentials">Credentials</h2>
+<p>Versioned machine-readable contracts are available as <a href="../assets/protocol/v1.schema.json">JSON Schema 2020-12</a>, with <a href="../assets/protocol/v1.fixtures.json">valid and invalid golden fixtures</a>. Select the appropriate named <code>$defs</code> schema for tokens, errors, discovery, watch frames and sync batches. The root validates call envelopes. Runtime checks additionally enforce causal, history and sync-coverage relationships.</p>
+
+<p>Credentials travel as <code>Authorization: Bearer &lt;token&gt;</code> (exactly that capitalization). The server compares the token with its own three tokens:</p>
+
+<ul>
+  <li>The <strong>admin</strong> token unlocks operator endpoints and every worker and sync endpoint. On call endpoints it makes the caller a <strong>trusted gateway</strong>: the body may then carry <code>principal</code> (<code>{"subject", "tenant"?, "claims"?}</code>) and <code>timestamp_ms</code> (the clock the call reads), which are ignored otherwise. Watches honour <code>principal</code> and ignore <code>timestamp_ms</code>: they read the member's clock.</li>
+  <li>The <strong>worker</strong> token unlocks <code>/v1/queue/…</code>; the <strong>sync</strong> token unlocks <code>/v1/sync</code>.</li>
+  <li>Any other token is an end user's: it reaches the module's authorization component as <code>{"bearer": "&lt;token&gt;"}</code>. A call body (watches included) may instead carry <code>credentials</code> (any JSON), which takes precedence.</li>
+</ul>
+
+<p>A wrong or missing server credential answers <code>403 {"ok":false,"code":"forbidden","message":"admin token missing or wrong"}</code>. A token a server was not configured with authorizes nothing.</p>
+
+<h2 id="headers">Headers</h2>
+
+<h3 id="request-headers">Request headers</h3>
+
+<table>
+  <thead><tr><th>Header</th><th>Applies to</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td><code>Authorization</code></td><td>all</td><td><code>Bearer &lt;token&gt;</code>; see above.</td></tr>
+    <tr><td><code>Content-Type</code></td><td>JSON bodies</td><td>Must be <code>application/json</code>: <code>415 unsupported_media_type</code> otherwise.</td></tr>
+    <tr><td><code>x-flower-timeout-ms</code></td><td>all</td><td>The caller's deadline for the whole request, in whole milliseconds (capped at one day). It can only shorten a call's own deadline: a call cut off by it answers <code>503 caller_deadline_exceeded</code>, requests still waiting for admission at it are refused with <code>503 overloaded</code>, and a write still queued past it never runs. Followers forward what is left of it. For a watch it bounds the first snapshot only. Malformed: <code>400 bad_request</code>.</td></tr>
+    <tr><td><code>x-flower-max-staleness-ms</code></td><td><code>/v1/query</code></td><td>Tightens a replica-local query's staleness bound (0–2147483647). <code>0</code> asks for a proven-fresh answer. Never loosens a query's own bound; ignored by linearizable queries. Malformed: 400.</td></tr>
+    <tr><td><code>x-flower-group</code> (or <code>?group=</code>)</td><td>all</td><td>Route to a named group instead of the database's owner; mainly for operator endpoints of non-root groups. Unknown group: <code>404 unknown_group</code>.</td></tr>
+    <tr><td><code>traceparent</code></td><td>all</td><td>W3C trace context, joined when OpenTelemetry export is on.</td></tr>
+  </tbody>
+</table>
+
+<p>There is no header for request IDs (they go in the body as <code>idempotency_key</code>), for consistency (queries declare it), or for the database (it goes in the body or query string). A follower forwards <code>Authorization</code>, <code>Content-Type</code>, <code>Accept</code>, <code>x-flower-max-staleness-ms</code> and the remaining deadline to the leader, and no other header.</p>
+
+<h3 id="response-headers">Response headers</h3>
+
+<table>
+  <thead><tr><th>Header</th><th>When</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td><code>x-flower-leader-url</code></td><td>calls, watches, queue, timer and admin answers, when the member knows the leader</td><td>The leader's <code>--advertise-http</code> URL — for a placed database, the owning group's leader.</td></tr>
+    <tr><td><code>x-flower-staleness-ms</code></td><td>replica-local query answers</td><td>Estimated staleness in ms, <code>0</code> after a proven-fresh read, or <code>unknown</code>.</td></tr>
+    <tr><td><code>x-flower-group</code></td><td>every answer</td><td>The group that served the request (<code>root</code> for unplaced databases).</td></tr>
+    <tr><td><code>x-flower-partition-epoch</code></td><td>calls on placed databases</td><td>The partition's ownership epoch.</td></tr>
+    <tr><td><code>Server-Timing</code></td><td>JSON answers of query, mutate and transaction, failures included</td><td>See below.</td></tr>
+    <tr><td><code>Retry-After</code></td><td><code>503 overloaded</code>, <code>partition_moving</code>, <code>partition_moved</code>, <code>410 partition_retired</code></td><td>Seconds to wait before retrying, rounded up from the body's <code>retry_after_ms</code>.</td></tr>
+  </tbody>
+</table>
+
+<h3 id="server-timing">Server-Timing</h3>
+
+<p>Durations in milliseconds, each present only when its phase ran, in this order:</p>
+
+<table>
+  <thead><tr><th>Metric</th><th>Phase</th></tr></thead>
+  <tbody>
+    <tr><td><code>forward</code></td><td>A follower's round trip to the leader. Phases after it are the leader's.</td></tr>
+    <tr><td><code>cache;desc=hit|miss</code></td><td>Query result cache lookup.</td></tr>
+    <tr><td><code>fence</code></td><td>Proving a read fresh (lease check, quorum round or leader fence).</td></tr>
+    <tr><td><code>join</code></td><td>Waiting for an identical query already in flight.</td></tr>
+    <tr><td><code>admission</code></td><td>Waiting for an evaluation slot.</td></tr>
+    <tr><td><code>queue</code></td><td>A write's wait in the leader's writer queue.</td></tr>
+    <tr><td><code>eval</code></td><td>Running the guest: the query, or preparing the write.</td></tr>
+    <tr><td><code>commit</code>, <code>append</code>, <code>replicate</code></td><td>Raft commit; local append and replication to a quorum overlap inside it.</td></tr>
+    <tr><td><code>apply</code></td><td>Applying the committed entry.</td></tr>
+    <tr><td><code>total</code></td><td>The whole request on the answering member.</td></tr>
+    <tr><td><code>node;desc=&lt;id&gt;</code>, <code>leader;desc=&lt;id&gt;</code></td><td>The answering member and the leader it knew.</td></tr>
+    <tr><td><code>snapshot;desc=building</code></td><td>A snapshot build overlapped the request.</td></tr>
+  </tbody>
+</table>
+
+<pre><code class="language-http">server-timing: admission;dur=0.0, queue;dur=0.0, eval;dur=0.6, commit;dur=2.3, append;dur=1.7, replicate;dur=1.8, apply;dur=0.2, total;dur=3.0, node;desc=1, leader;desc=1</code></pre>
+
+<h2 id="protocol">Version and capabilities</h2>
+<p><code>GET /v1/protocol</code> returns <code>{"version":1,"capabilities":["read_tokens","scoped_commands","watch_history","sync_since"]}</code>. Responses report <code>x-flower-protocol-version</code>. Optional capabilities are checked explicitly; unknown required versions are refused.</p>
+<p>Queries accept <code>x-flower-at-least</code>, an opaque scope-qualified read token. Successful queries report <code>x-flower-read-token</code> and <code>x-flower-consistency</code>; successful mutation envelopes may include <code>read_token</code>. Wrong-history read tokens answer 409 and malformed tokens 400. Token counters are canonical decimal strings. Never compare a database revision with a group log position.</p>
+<p>Error bodies and terminal watch errors include a <code>problem</code> extension with <code>status</code>, <code>code</code>, <code>message</code>, <code>details?</code>, <code>origin</code>, <code>execution</code>, <code>retryable</code> and <code>retry_after_ms?</code>. Retry advice and outcome certainty are separate. Watch snapshots include <code>history</code> when established. Sync batches require <code>version</code>, <code>since</code> and their covered position.</p>
+<h2 id="calls">Calls</h2>
+
+<h3 id="query"><span class="method">POST</span> /v1/query</h3>
+<p>Modules can expose request-time SQL through a normal query backed by <code>SqlEndpoint</code>. Its arguments typically contain <code>statement</code> and <code>params</code>; the module fixes the allowed collections, budgets and access rules. This uses the same query envelope and authentication as other methods. There is no generic <code>/v1/sql</code> route. See <a href="../guides/sql.html">SQL queries</a>.</p>
+
+<table>
+  <thead><tr><th>Field</th><th>Type</th><th></th></tr></thead>
+  <tbody>
+    <tr><td><code>db</code></td><td>string</td><td>Database.</td></tr>
+    <tr><td><code>module</code></td><td>string</td><td>Module.</td></tr>
+    <tr><td><code>name</code></td><td>string</td><td>The query's HTTP name.</td></tr>
+    <tr><td><code>args</code></td><td>any</td><td>Required; the method's arguments object (<code>{}</code> for none, or the bare value of a <code>bare_arg</code> method).</td></tr>
+    <tr><td><code>credentials</code></td><td>any</td><td>Optional; for the authorization component.</td></tr>
+    <tr><td><code>principal</code>, <code>timestamp_ms</code></td><td></td><td>Trusted gateway only.</td></tr>
+  </tbody>
+</table>
+
+<p>Success is <code>200 {"ok":true,"value":&lt;result&gt;}</code>, with no revision. A failure answers a non-2xx status with <code>{"ok":false,"code","message","details"?}</code>; the query's own failure is <strong>422</strong>:</p>
+
+<pre><code class="language-json">{"ok":true,"value":{"done":false,"title":"Buy milk"}}
+{"code":"TASK_NOT_FOUND","details":"nope","message":"no task has this ID","ok":false}
+{"code":"INVALID_ARGUMENT","details":{"path":["id"]},"message":"arguments for `task` invalid at $.id: expected string","ok":false}</code></pre>
+
+<p>Calling a mutation's name here answers <code>422 INVALID_INVOCATION</code>; a name that is not a query or mutation with <code>http</code> in this module, or a module or database that does not exist, <code>404 UNKNOWN_METHOD</code>.</p>
+
+<h3 id="mutate"><span class="method">POST</span> /v1/mutate</h3>
+
+<p>The query fields, plus:</p>
+
+<table>
+  <thead><tr><th>Field</th><th>Type</th><th></th></tr></thead>
+  <tbody>
+    <tr><td><code>idempotency_key</code></td><td>string</td><td>The request ID. A retry with the same key answers the recorded outcome. <code>f1:</code>/<code>f2:</code> keys are scoped IDs and must be well-formed (400 otherwise). See <a href="../concepts/retries.html">Retries</a>.</td></tr>
+    <tr><td><code>expected_revision</code></td><td>integer</td><td>Fail with <code>stale_revision</code> if the database has moved past it.</td></tr>
+  </tbody>
+</table>
+
+<pre><code class="language-json">200 {"ok":true,"value":{"done":false,"title":"Buy milk"},"revision":1,"position":5,"duplicate":false}
+200 {"ok":true,"value":{"done":false,"title":"Buy milk"},"revision":1,"position":5,"duplicate":true}
+422 {"ok":false,"revision":1,"position":6,"code":"TASK_NOT_FOUND","message":"no task has this ID","details":"nope","duplicate":false}
+422 {"ok":false,"revision":1,"position":8,"code":"stale_revision","message":"expected revision 0 but the database is at 1","duplicate":false}</code></pre>
+
+<p>Every outcome the mutation records answers with <code>revision</code>, <code>position</code> and <code>duplicate</code>: success with 200, and every failure — the method's own codes, <code>INVALID_ARGUMENT</code>, receipt refusals, access-policy refusals, <code>stale_revision</code>, a guest-side refusal such as <code>queue_undeclared</code> — with <strong>422</strong>, the message and any <code>details</code>. Nothing the failed call wrote was kept; <code>duplicate</code> is true when a stored receipt answered. A mutation whose effects outgrow <code>--max-transaction-bytes</code> answers <code>413 transaction_too_large</code> before anything is proposed. Calling a query's name here answers <code>422 INVALID_INVOCATION</code>.</p>
+
+<h3 id="transaction"><span class="method">POST</span> /v1/transaction</h3>
+
+<pre><code class="language-json">{
+  "steps": [
+    {"db": "demo",    "module": "tasks", "method": "complete_task", "args": {"id": "milk"}},
+    {"db": "archive", "module": "tasks", "method": "add_task",      "args": {"id": "milk", "title": "Buy milk"}}
+  ],
+  "idempotency_key": "archive-milk"
+}</code></pre>
+
+<p>At least one step, each on a different database (<code>422 INVALID_VALUE</code> otherwise); <code>method</code> is a mutation's HTTP name. Also takes <code>credentials</code> and the gateway fields. The steps share one deadline (60 s, shortened by <code>x-flower-timeout-ms</code>), and their committed effects are bounded by <code>--max-transaction-bytes</code> (<code>413 transaction_too_large</code>). The answer is the mutation shape with <code>value</code> as an array of step results, plus <code>revisions</code> (per database) and, across groups, <code>positions</code> (per group):</p>
+
+<pre><code class="language-json">200 {"ok":true,"value":[{"done":true,"title":"Buy milk"},{"done":false,"title":"Buy milk"}],"revision":4,"position":14,"revisions":{"archive":1,"demo":4},"duplicate":false}
+422 {"ok":false,"revision":4,"position":0,"code":"TASK_NOT_FOUND","message":"no task has this ID","details":"zzz","duplicate":false}</code></pre>
+
+<p>A failing step answers 422 with that step's failure; nothing committed. See <a href="../concepts/transactions.html">Transactions</a>.</p>
+
+<h3 id="watch"><span class="method">POST</span> /v1/watch</h3>
+
+<p>The body is exactly a query's — <code>db</code>, <code>module</code>, <code>name</code>, <code>args</code>, <code>credentials</code>?, <code>principal</code>? (trusted gateway) — plus <code>"deltas": true</code> to accept <code>patch</code> events:</p>
+
+<pre><code class="language-bash">curl -sN http://127.0.0.1:8080/v1/watch -H 'content-type: application/json' \
+  -d '{"db":"demo","module":"tasks","name":"open_tasks","args":{},"deltas":true}'</code></pre>
+
+<p>A failure before the first snapshot answers an ordinary JSON error, with the query's status (<code>422</code> for its own failure). Then <code>text/event-stream</code>:</p>
+
+<pre><code class="language-sse">event: snapshot
+data: {"revision":3,"id":1,"value":[{"id":"bread","title":"Bake bread"}]}
+
+event: patch
+data: {"revision":4,"id":3,"base":2,"patch":[{"op":"add","path":"/0","value":{"id":"eggs","title":"Buy eggs"}}]}
+
+event: error
+data: {"code":"unauthorized","message":"…"}
+
+: watching</code></pre>
+
+<ul>
+  <li><code>snapshot</code> carries a whole value; it is always first. <code>patch</code> (with <code>deltas</code>) applies RFC 6902 <code>add</code>/<code>remove</code>/<code>replace</code> operations to the value whose <code>id</code> is <code>base</code>, whenever the patch is smaller than the value.</li>
+  <li><code>error</code> ends the stream: <code>unauthorized</code>, <code>watch_scope_changed</code>, <code>shutdown</code>, <code>forward</code>, <code>overloaded</code>, the query's own failure (with its <code>details</code>, if any), <code>UNKNOWN_METHOD</code> after a redeploy, <code>partition_moving</code>, and others. Reconnect for a fresh snapshot.</li>
+  <li><code>: watching</code> comments keep idle streams open every 15 s. There are no <code>id:</code> fields and no resume.</li>
+  <li>Later refreshes run on the member's clock, without the subscribing request's deadline. Subscribers are reauthorized at least every 30 s.</li>
+  <li>A subscriber more than 32 events behind is disconnected without an error event. The member holds at most 64 MiB of watches' arguments and credentials; past it a new watch answers <code>503 overloaded</code>.</li>
+</ul>
+
+<h3 id="retry"><span class="method">GET</span> /v1/retry, <span class="method">POST</span> /v1/retry/session</h3>
+
+<p><code>GET /v1/retry?db=D</code> answers the database's retry identity — <code>incarnation</code>, <code>epoch</code>, <code>min_epoch</code>, <code>epoch_ms</code>, <code>keep_epochs</code>, <code>initialized</code> and counters — from which clients mint <code>f1:</code> and <code>f2:</code> request IDs. <code>POST /v1/retry/session</code> takes <code>{"db","module","session":"&lt;32 hex&gt;","operation":"open"|"status"|"ack"|"close","through"?,"abandon"?,"limit"?,"credentials"?}</code> and answers <code>{"ok":true,"session":{session,incarnation,epoch,acknowledged,closed}}</code>. The module's authorization component decides the session's owner under its <code>sessions</code> access.</p>
+
+<h2 id="health">Status and health</h2>
+
+<pre><code class="language-json">GET /v1/status     {"id":1,"state":"Leader","leader":1,"term":1,"last_log":14,"last_applied":14}
+GET /health/live   {"ok":true}
+GET /health/ready  {"applied":14,"committed":14,"leader":1,"ok":true,"reason":null,"rejoining":false,"storage":null}</code></pre>
+
+<p><code>/health/ready</code> answers 503 with a <code>reason</code> (<code>no known leader</code>, <code>applying committed entries</code>, <code>rejoining: …</code>, a storage failure) when the member should not take traffic; <code>?group=</code> asks about one group.</p>
+
+<h2 id="queues">Queues</h2>
+
+<p>Worker or admin token. Every answer is <code>200</code>: <code>{"ok":true,…}</code>, or <code>{"ok":false,"code","message"}</code> for refusals such as a lease no longer held, or <code>queue_purging</code> while a removed module's queue is being deleted (retry once the purge ends). Native workers may name any queue; guests use only the queues their module declares.</p>
+
+<table>
+  <thead><tr><th>Endpoint</th><th>Body or parameters</th><th>Answer</th></tr></thead>
+  <tbody>
+    <tr><td><span class="method">POST</span><code>/v1/queue/poll</code></td><td><code>{db, queue, limit?=10, lease_ms?=30000, scope?="", owner?, wait_ms?}</code></td><td><code>items</code>: claims with <code>id</code>, <code>token</code>, <code>payload</code>, <code>attempts</code>, <code>fence</code>, <code>scope</code>, <code>priority</code>, <code>owner</code>, <code>name</code>, <code>group</code>, <code>expires_ms</code>, <code>available_ms</code>, <code>claimed_ms</code></td></tr>
+    <tr><td><span class="method">POST</span><code>/v1/queue/heartbeat</code></td><td><code>{db, queue, id, token, lease_ms?}</code></td><td>renews the lease</td></tr>
+    <tr><td><span class="method">POST</span><code>/v1/queue/complete</code></td><td><code>{db, queue, id, token, result?, next?}</code></td><td>with <code>result</code>, keeps the job completed; without, deletes it; <code>next</code> claims more in the same commit</td></tr>
+    <tr><td><span class="method">POST</span><code>/v1/queue/fail</code></td><td><code>{db, queue, id, token, delay_ms?, next?}</code></td><td>pending again, or dead when attempts are spent</td></tr>
+    <tr><td><span class="method">POST</span><code>/v1/queue/kill</code></td><td><code>{db, queue, id, token, next?}</code></td><td>dead now</td></tr>
+    <tr><td><span class="method">POST</span><code>/v1/queue/release</code></td><td><code>{db, queue, id, token, delay_ms?}</code></td><td>pending again, attempt not spent</td></tr>
+    <tr><td><span class="method">POST</span><code>/v1/queue/cancel</code>, <code>/retry</code>, <code>/purge</code></td><td><code>{db, queue, id}</code>, <code>{db, queue, id, delay_ms?}</code>, <code>{db, queue, older_than_ms?}</code></td><td>delete a job; revive a dead one; delete old dead and completed jobs</td></tr>
+    <tr><td><span class="method">GET</span><code>/v1/queue/stats</code>, <code>/ready</code>, <code>/item</code></td><td><code>?db&amp;queue&amp;scope&amp;owner</code>; <code>/item</code> takes <code>id</code>, or <code>name</code> and <code>scope</code></td><td>counts (<code>pending</code>, <code>claimed</code>, <code>dead</code>, <code>completed</code>, <code>ready</code>, <code>next_ms</code>) and readiness; one job</td></tr>
+  </tbody>
+</table>
+
+<p><code>next</code> is a claim: <code>{limit?, lease_ms?, scope?, owner?, wait_ms?}</code>.</p>
+
+<h2 id="timers">Timers</h2>
+
+<p>Admin token. <code>GET /v1/timer/stats?db</code> (<code>pending</code>, <code>dead</code>, <code>held</code>), <code>GET /v1/timer/get?db&amp;id</code>, <code>GET /v1/timer/list?db&amp;state=pending|dead|held|all&amp;limit</code>; <code>POST /v1/timer/cancel {db, id}</code>, <code>/retry {db, id, delay_ms?}</code>, <code>/purge {db, older_than_ms?}</code>. A <code>held</code> timer came due while its module was removed. Timers fire from the leader's maintenance loop, not from an endpoint.</p>
+
+<h2 id="admin">Operator endpoints</h2>
+
+<p>Admin token. The <a href="cli.html"><code>cargo flower</code></a> commands wrap them.</p>
+
+<table>
+  <thead><tr><th>Endpoint</th><th>Purpose</th><th>CLI</th></tr></thead>
+  <tbody>
+    <tr><td><span class="method">POST</span><code>/v1/deploy</code></td><td><code>{db, module, wasm_b64, manifest, identity?}</code>: deploy a module. A module or manifest that fails validation answers <code>500 invalid_module</code> or <code>invalid_manifest</code>.</td><td><code>deploy</code></td></tr>
+    <tr><td><code>/v1/admin/deployments</code></td><td><code>{"operation": "stage"|"advance"|"status"|"activate"|"cancel"|"collect", db, module, …}</code></td><td><code>deployment</code></td></tr>
+    <tr><td><code>/v1/admin/modules</code></td><td>List modules; <code>{"operation":"remove", db, module, purge?}</code>.</td><td><code>modules</code></td></tr>
+    <tr><td><code>/v1/admin/membership</code></td><td>View; <code>{"members": […], expected_log_id?, retain?}</code> to change.</td><td><code>membership</code></td></tr>
+    <tr><td><code>/v1/admin/leadership</code></td><td><code>{"to": id}</code>.</td><td><code>leadership</code></td></tr>
+    <tr><td><code>/v1/admin/backup</code></td><td>Continuous backup status; POST takes a full backup (<code>503 unavailable</code> without backups configured).</td><td><code>backup</code></td></tr>
+    <tr><td><code>/v1/admin/keys</code></td><td>Managed-key catalogs, one per database. GET lists every database's, or one with <code>?db=</code>; POST <code>{db, operation, requestId?, …}</code> changes one (camelCase fields). Refusals answer 400 with their own code (<code>KEY_REQUEST</code> and the like); a member without the wrapping key answers 503 <code>KEYS_LOCKED</code>.</td><td><code>keys</code></td></tr>
+    <tr><td><code>/v1/admin/retention</code></td><td>Retry retention: status, <code>rotate</code>, <code>advance</code>, <code>collect</code>, <code>budget</code>.</td><td><code>retention</code></td></tr>
+    <tr><td><code>/v1/admin/groups</code>, <code>/partitions</code>, <code>/transactions</code></td><td>Groups, partition placement and moves, cross-group transactions.</td><td><code>group</code>, <code>partition</code>, <code>transactions</code></td></tr>
+    <tr><td><code>/v1/metrics</code>, <code>/v1/admin/raft</code>, <code>/v1/admin/activity</code></td><td>Metrics, Raft metrics, recent writes and watches.</td><td><code>metrics</code>, <code>raft</code>, <code>activity</code></td></tr>
+    <tr><td><code>/v1/admin/stream</code>, <code>/v1/admin/activity/stream</code></td><td>Server-sent operator streams (16 at a time; 429 beyond).</td><td>the dashboard</td></tr>
+  </tbody>
+</table>
+
+<p>Deployment bodies may be up to 64 MiB (<code>--deploy-max-bytes</code>); every other body up to 2 MiB.</p>
+
+<h2 id="errors">Errors</h2>
+
+<p>Every error answers JSON: <code>{"ok":false,"code":…,"message":…}</code>, with <code>details</code> when the call's own failure carries any, <code>revision</code>/<code>position</code>/<code>duplicate</code> for a recorded write, <code>retry_after_ms</code> for retryable refusals and <code>leader</code> for <code>forward</code>. The status tells a client what to do; <strong>only 422 is the call's own answer</strong>.</p>
+
+<table>
+  <thead><tr><th>Status</th><th>Codes</th><th>Retry?</th></tr></thead>
+  <tbody>
+    <tr><td>400</td><td><code>bad_request</code>: a body that is not the endpoint's JSON, a malformed header or request ID</td><td>No</td></tr>
+    <tr><td>403</td><td><code>unauthorized</code> (the authorization component), <code>ACCESS_DENIED</code> (a query's access rule), <code>forbidden</code> (server token)</td><td>No</td></tr>
+    <tr><td>404</td><td><code>UNKNOWN_METHOD</code>, <code>unknown_group</code></td><td>No</td></tr>
+    <tr><td>409</td><td><code>MODULE_CONFLICT</code>, <code>deployment</code>, <code>deployment_in_progress</code>, <code>membership</code>, <code>transfer_failed</code></td><td>No</td></tr>
+    <tr><td>410</td><td><code>partition_retired</code></td><td>No</td></tr>
+    <tr><td>413</td><td><code>transaction_too_large</code>; <code>payload_too_large</code> for a body past its limit</td><td>No</td></tr>
+    <tr><td>415</td><td><code>unsupported_media_type</code></td><td>No</td></tr>
+    <tr><td>422</td><td>The call's own failure: every <code>UPPER_SNAKE_CASE</code> code (yours, <code>INVALID_ARGUMENT</code>, <code>INVALID_INVOCATION</code>, <code>SCHEMA_MISMATCH</code>, <code>MODULE_PRIVATE</code>, …), the limits it ran out of (<code>deadline_exceeded</code>, <code>budget_exhausted</code>, <code>out_of_memory</code>, <code>stack_overflow</code>, <code>nesting_too_deep</code>), <code>init_failed</code>, <code>host_trap</code>, and every failure a mutation or transaction records (<code>stale_revision</code>, receipt refusals, …)</td><td>No</td></tr>
+    <tr><td>500</td><td>Other host failures: <code>invalid_module</code>, <code>invalid_manifest</code>, <code>fatal</code>, …</td><td>No</td></tr>
+    <tr><td>503</td><td><code>overloaded</code>, <code>caller_deadline_exceeded</code>, <code>quorum</code>, <code>forward</code>, <code>stale_replica</code>, <code>recovering</code>, <code>rejoining</code>, <code>storage_failed</code>, <code>host_io</code>, <code>leadership_transfer</code>, <code>leader_isolated</code>, <code>forward_failed</code>, <code>instances_exhausted</code>, <code>instantiation_failed</code>, <code>module_unavailable</code>, <code>partition_moving</code>, <code>partition_moved</code></td><td>Yes; a write with its same request ID</td></tr>
+    <tr><td>503</td><td><code>unavailable</code>: the server was not configured for it (backups, a group it does not host)</td><td>No</td></tr>
+  </tbody>
+</table>
+
+<p>Every code is described in <a href="errors.html">Error codes and limits</a>.</p>
+<!-- /content -->
+      <nav class="page-nav" aria-label="Previous and next">
+        <a class="prev" href="../guides/testing.html" rel="prev">← Testing applications</a>
+        <a class="next" href="cli.html" rel="next">cargo flower →</a>
+      </nav>
+      <footer class="site-footer">
+        <p><a href="https://github.com/ipsomachina/flower">Flower on GitHub</a> · <a href="../../LICENSE">MIT license</a> · <a href="https://ipsomachina.com/privacy">Privacy &amp; legal notice</a></p>
+        <p>© 2026 <a href="https://ipsomachina.com">Ipso Machina</a> · Avenue de Chamonix 3 · 1207 Genève · Switzerland</p>
+      </footer>
+    </main>
+    <nav class="toc" aria-label="On this page">
+      <h2>On this page</h2>
+      <ul>
+        <li class="depth-2"><a href="#overview">Endpoints</a></li>
+        <li class="depth-2"><a href="#credentials">Credentials</a></li>
+        <li class="depth-2"><a href="#headers">Headers</a></li>
+        <li class="depth-3"><a href="#request-headers">Request headers</a></li>
+        <li class="depth-3"><a href="#response-headers">Response headers</a></li>
+        <li class="depth-3"><a href="#server-timing">Server-Timing</a></li>
+        <li class="depth-2"><a href="#protocol">Version and capabilities</a></li>
+        <li class="depth-2"><a href="#calls">Calls</a></li>
+        <li class="depth-3"><a href="#query">POST /v1/query</a></li>
+        <li class="depth-3"><a href="#mutate">POST /v1/mutate</a></li>
+        <li class="depth-3"><a href="#transaction">POST /v1/transaction</a></li>
+        <li class="depth-3"><a href="#watch">POST /v1/watch</a></li>
+        <li class="depth-3"><a href="#retry">GET /v1/retry, POST /v1/retry/session</a></li>
+        <li class="depth-2"><a href="#health">Status and health</a></li>
+        <li class="depth-2"><a href="#queues">Queues</a></li>
+        <li class="depth-2"><a href="#timers">Timers</a></li>
+        <li class="depth-2"><a href="#admin">Operator endpoints</a></li>
+        <li class="depth-2"><a href="#errors">Errors</a></li>
+      </ul>
+    </nav>
+  </div>
+  </div>
+  <script src="../assets/search-index.js"></script>
+  <script src="../assets/docs.js"></script>
+</body>
+</html>

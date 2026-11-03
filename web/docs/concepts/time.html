@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Time · Flower docs</title>
+  <meta name="description" content="The invocation clock, now versus clock, and changes_at with earliest-wins.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://flower.ipsomachina.com/docs/concepts/time.html">
+  <meta property="og:title" content="Time">
+  <meta property="og:description" content="The invocation clock, now versus clock, and changes_at with earliest-wins.">
+  <meta property="og:image" content="https://flower.ipsomachina.com/social.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Flower logo on a white background">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" type="image/svg+xml" href="../../favicon.svg">
+  <link rel="stylesheet" href="../assets/docs.css">
+</head>
+<body data-root="../">
+  <a class="skip-link" href="#content">Skip to content</a>
+  <header class="site-header">
+    <button class="menu-button" id="menu-toggle" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="sidebar"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M3 5.5h14M3 10h14M3 14.5h14"/></svg></button>
+    <a class="brand" href="../index.html"><svg viewBox="0 0 80 80" width="32" height="32" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(0 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(60 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(120 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(180 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(240 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(300 40 40)"/></svg><span class="brand-name">FLOWER</span><span class="brand-docs">Documentation</span></a>
+    <div class="header-spacer"></div>
+    <div class="search" role="search">
+      <input id="search-input" type="search" placeholder="Search" autocomplete="off" spellcheck="false" aria-label="Search the documentation" aria-controls="search-results" aria-expanded="false" role="combobox">
+      <div class="search-results" id="search-results" role="listbox" hidden></div>
+    </div>
+    <a class="header-link" href="../../index.html">Home</a>
+    <a class="header-link" href="https://github.com/ipsomachina/flower">GitHub</a>
+  </header>
+  <div class="scrim" id="scrim" hidden></div>
+  <div class="layout">
+  <nav class="sidebar" id="sidebar" aria-label="Documentation">
+    <h2>Get started</h2>
+    <ul>
+      <li><a href="../index.html">Introduction</a></li>
+      <li><a href="../quickstart.html">Quickstart</a></li>
+    </ul>
+    <h2>Concepts</h2>
+    <ul>
+      <li><a href="databases.html">Databases, modules and groups</a></li>
+      <li><a href="collections.html">Collections and indexes</a></li>
+      <li><a href="methods.html">Queries and mutations</a></li>
+      <li><a href="derived.html">Derived values and aggregates</a></li>
+      <li><a href="consistency.html">Revisions and consistency</a></li>
+      <li><a href="retries.html">Retries and receipts</a></li>
+      <li><a href="watches.html">Watches</a></li>
+      <li><a href="time.html" aria-current="page">Time</a></li>
+      <li><a href="queues-timers.html">Queues and timers</a></li>
+      <li><a href="modules.html">Modules and interfaces</a></li>
+      <li><a href="transactions.html">Transactions and partitions</a></li>
+    </ul>
+    <h2>Guides</h2>
+    <ul>
+      <li><a href="../guides/rust-client.html">Calling Flower from Rust</a></li>
+      <li><a href="../guides/sql.html">SQL queries</a></li>
+      <li><a href="../guides/errors-retries.html">Errors and retries in clients</a></li>
+      <li><a href="../guides/auth.html">Authentication and authorization</a></li>
+      <li><a href="../guides/crypto.html">Guest cryptography</a></li>
+      <li><a href="../guides/workers.html">Worker queues</a></li>
+      <li><a href="../guides/deployments.html">Deployments</a></li>
+      <li><a href="../guides/backups.html">Backups and restore</a></li>
+      <li><a href="../guides/operations.html">Operating a cluster</a></li>
+      <li><a href="../guides/testing.html">Testing applications</a></li>
+    </ul>
+    <h2>Reference</h2>
+    <ul>
+      <li><a href="../reference/http.html">HTTP API</a></li>
+      <li><a href="../reference/cli.html">cargo flower</a></li>
+      <li><a href="../reference/sdk.html">flower-sdk</a></li>
+      <li><a href="../reference/errors.html">Error codes and limits</a></li>
+    </ul>
+  </nav>
+  <div class="main">
+    <main class="content" id="content">
+      <p class="breadcrumb">Concepts</p>
+<!-- content -->
+<h1>Time</h1>
+<p class="lede">Each invocation sees one fixed clock reading. Results that depend on time say so — either by polling the clock or by declaring the instant they will change — and caches, derived values and watches follow those declarations.</p>
+
+<h2 id="the-invocation-clock">The invocation clock</h2>
+
+<p><code>ctx.now()</code> and <code>ctx.clock()</code> return the same value: the invocation's timestamp in milliseconds since the Unix epoch, as an <code>f64</code>. It does not advance while your code runs, and nested calls see the same reading. They differ only in what they tell the engine:</p>
+
+<ul>
+  <li><code>now()</code> says "my result depends on the current time". The result <strong>polls</strong> the clock: it is never served from cache at a later instant, and a watch on it re-evaluates every 250 ms.</li>
+  <li><code>clock()</code> reads the time without that implication. Pair it with <code>changes_at</code> when your result changes at a known instant.</li>
+</ul>
+
+<h2 id="changes-at">Declaring when a result changes</h2>
+
+<p><code>ctx.changes_at(Some(t))</code> declares that the result may change at instant <code>t</code> even if no data changes. The result is valid from its evaluation until then: caches serve it, and at <code>t</code> it is evaluated again and watches refresh.</p>
+
+<pre><code class="language-rust" data-include="examples/snippets/src/time.rs#changes-at">/// The discount a coupon gives right now. The answer can change at the
+/// coupon's expiry without any write, so the query says when: caches
+/// and watches hold the result until then, and re-evaluate at that
+/// instant.
+#[query(http)]
+pub fn discount(ctx: &amp;mut QueryCtx&lt;'_, '_&gt;, code: String) -&gt; Result&lt;u64&gt; {
+    let Some(coupon) = Coupons::get(ctx, &amp;code)? else {
+        return Ok(0);
+    };
+    let now = ctx.clock()?;
+    if now &gt;= coupon.expires_at {
+        return Ok(0);
+    }
+    ctx.changes_at(Some(coupon.expires_at))?;
+    Ok(coupon.percent)
+}</code></pre>
+
+<p>The <strong>earliest declaration wins</strong>. Declarations from everything an invocation reads — derived values, other modules' methods, the authorization decision — combine, and a later instant never lifts an earlier one. That is what you want: a session that lasts an hour does not extend a token check that expires in a minute. <code>changes_at(None)</code> declares nothing. A declared instant at or before the evaluation's own clock counts as polling.</p>
+
+<p>When the value changes continuously, poll instead:</p>
+
+<pre><code class="language-rust" data-include="examples/snippets/src/time.rs#now">/// Seconds left on a coupon. This changes every instant, so it reads
+/// `now()`: the result is never cached and a watch re-evaluates it
+/// on every poll.
+#[query(http)]
+pub fn seconds_left(ctx: &amp;mut QueryCtx&lt;'_, '_&gt;, code: String) -&gt; Result&lt;f64&gt; {
+    let Some(coupon) = Coupons::get(ctx, &amp;code)? else {
+        return Ok(0.0);
+    };
+    let now = ctx.now()?;
+    Ok(((coupon.expires_at - now) / 1000.0).max(0.0).floor())
+}</code></pre>
+
+<h2 id="derived-values-and-time">Derived values and time</h2>
+
+<p>A derived value keeps the time behaviour of its evaluation with its cached outcome, including what it inherited from the values it read. One that polled is served only at the instant it was computed; one that declared an instant is served until that instant, then evaluated again (keeping its pin if it is materialized). Every reader inherits both.</p>
+
+<h2 id="where-the-clock-comes-from">Where the clock comes from</h2>
+
+<ul>
+  <li><strong>Mutations</strong> take the leader's clock when the leader prepares them. A batch of mutations prepared together shares one reading, and a leader's writer never goes backwards. Node clocks are not synchronized distributed time: after a failover, the new leader's clock is what counts. Keep clocks synchronized with NTP.</li>
+  <li><strong>Queries</strong> take the clock of the member that evaluates them.</li>
+  <li><strong>Timers</strong> and queue <strong>leases</strong> are due times on the leader's clock, at least as late as requested; they are never exact.</li>
+  <li>A trusted gateway (a request carrying the admin token) may pass <code>timestamp_ms</code> to evaluate a call at a chosen time, for testing and replays. A watch uses it for its first snapshot only: its later refreshes read the serving member's clock, so clock-reading queries and token expiry keep moving.</li>
+</ul>
+
+<h2 id="authorization-and-time">Authorization decisions and time</h2>
+
+<p>An authorization hook's decision can expire too: a typed authenticator like <code>JwtBearer</code> declares the token's expiry, and a hook can return <code>until</code> or call <code>changes_at</code>. The server keeps a decision only until then, and an open watch is re-authorized at that instant — so a watch never outlives the token that opened it. See <a href="../guides/auth.html#decision-expiry">Authentication and authorization</a>.</p>
+<!-- /content -->
+      <nav class="page-nav" aria-label="Previous and next">
+        <a class="prev" href="watches.html" rel="prev">← Watches</a>
+        <a class="next" href="queues-timers.html" rel="next">Queues and timers →</a>
+      </nav>
+      <footer class="site-footer">
+        <p><a href="https://github.com/ipsomachina/flower">Flower on GitHub</a> · <a href="../../LICENSE">MIT license</a> · <a href="https://ipsomachina.com/privacy">Privacy &amp; legal notice</a></p>
+        <p>© 2026 <a href="https://ipsomachina.com">Ipso Machina</a> · Avenue de Chamonix 3 · 1207 Genève · Switzerland</p>
+      </footer>
+    </main>
+    <nav class="toc" aria-label="On this page">
+      <h2>On this page</h2>
+      <ul>
+        <li class="depth-2"><a href="#the-invocation-clock">The invocation clock</a></li>
+        <li class="depth-2"><a href="#changes-at">Declaring when a result changes</a></li>
+        <li class="depth-2"><a href="#derived-values-and-time">Derived values and time</a></li>
+        <li class="depth-2"><a href="#where-the-clock-comes-from">Where the clock comes from</a></li>
+        <li class="depth-2"><a href="#authorization-and-time">Authorization decisions and time</a></li>
+      </ul>
+    </nav>
+  </div>
+  </div>
+  <script src="../assets/search-index.js"></script>
+  <script src="../assets/docs.js"></script>
+</body>
+</html>

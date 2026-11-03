@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Backups and restore · Flower docs</title>
+  <meta name="description" content="Continuous encrypted backup to object storage and point-in-time restore.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://flower.ipsomachina.com/docs/guides/backups.html">
+  <meta property="og:title" content="Backups and restore">
+  <meta property="og:description" content="Continuous encrypted backup to object storage and point-in-time restore.">
+  <meta property="og:image" content="https://flower.ipsomachina.com/social.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Flower logo on a white background">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" type="image/svg+xml" href="../../favicon.svg">
+  <link rel="stylesheet" href="../assets/docs.css">
+</head>
+<body data-root="../">
+  <a class="skip-link" href="#content">Skip to content</a>
+  <header class="site-header">
+    <button class="menu-button" id="menu-toggle" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="sidebar"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M3 5.5h14M3 10h14M3 14.5h14"/></svg></button>
+    <a class="brand" href="../index.html"><svg viewBox="0 0 80 80" width="32" height="32" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(0 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(60 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(120 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(180 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(240 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(300 40 40)"/></svg><span class="brand-name">FLOWER</span><span class="brand-docs">Documentation</span></a>
+    <div class="header-spacer"></div>
+    <div class="search" role="search">
+      <input id="search-input" type="search" placeholder="Search" autocomplete="off" spellcheck="false" aria-label="Search the documentation" aria-controls="search-results" aria-expanded="false" role="combobox">
+      <div class="search-results" id="search-results" role="listbox" hidden></div>
+    </div>
+    <a class="header-link" href="../../index.html">Home</a>
+    <a class="header-link" href="https://github.com/ipsomachina/flower">GitHub</a>
+  </header>
+  <div class="scrim" id="scrim" hidden></div>
+  <div class="layout">
+  <nav class="sidebar" id="sidebar" aria-label="Documentation">
+    <h2>Get started</h2>
+    <ul>
+      <li><a href="../index.html">Introduction</a></li>
+      <li><a href="../quickstart.html">Quickstart</a></li>
+    </ul>
+    <h2>Concepts</h2>
+    <ul>
+      <li><a href="../concepts/databases.html">Databases, modules and groups</a></li>
+      <li><a href="../concepts/collections.html">Collections and indexes</a></li>
+      <li><a href="../concepts/methods.html">Queries and mutations</a></li>
+      <li><a href="../concepts/derived.html">Derived values and aggregates</a></li>
+      <li><a href="../concepts/consistency.html">Revisions and consistency</a></li>
+      <li><a href="../concepts/retries.html">Retries and receipts</a></li>
+      <li><a href="../concepts/watches.html">Watches</a></li>
+      <li><a href="../concepts/time.html">Time</a></li>
+      <li><a href="../concepts/queues-timers.html">Queues and timers</a></li>
+      <li><a href="../concepts/modules.html">Modules and interfaces</a></li>
+      <li><a href="../concepts/transactions.html">Transactions and partitions</a></li>
+    </ul>
+    <h2>Guides</h2>
+    <ul>
+      <li><a href="rust-client.html">Calling Flower from Rust</a></li>
+      <li><a href="sql.html">SQL queries</a></li>
+      <li><a href="errors-retries.html">Errors and retries in clients</a></li>
+      <li><a href="auth.html">Authentication and authorization</a></li>
+      <li><a href="crypto.html">Guest cryptography</a></li>
+      <li><a href="workers.html">Worker queues</a></li>
+      <li><a href="deployments.html">Deployments</a></li>
+      <li><a href="backups.html" aria-current="page">Backups and restore</a></li>
+      <li><a href="operations.html">Operating a cluster</a></li>
+      <li><a href="testing.html">Testing applications</a></li>
+    </ul>
+    <h2>Reference</h2>
+    <ul>
+      <li><a href="../reference/http.html">HTTP API</a></li>
+      <li><a href="../reference/cli.html">cargo flower</a></li>
+      <li><a href="../reference/sdk.html">flower-sdk</a></li>
+      <li><a href="../reference/errors.html">Error codes and limits</a></li>
+    </ul>
+  </nav>
+  <div class="main">
+    <main class="content" id="content">
+      <p class="breadcrumb">Guides</p>
+<!-- content -->
+<h1>Backups and restore</h1>
+<p class="lede">Every member can archive the log continuously into an encrypted backup store — an S3 bucket or a directory. Restore offline to the latest backup, to a named backup, to an exact log position, or to a point in time.</p>
+
+<h2 id="how-it-works">How it works</h2>
+
+<ul>
+  <li>The group's leader periodically takes a <strong>base</strong> (a full snapshot) and continuously <strong>archives</strong> the log entries applied after it, in segments. A restore loads a base and replays archived entries.</li>
+  <li>Every object is compressed (zstd) and sealed with AES-256-GCM under a backup key kept in a <strong>keystore</strong> file, itself sealed by a 32-byte <strong>key-encryption key</strong> (KEK) you provide. Object names are opaque.</li>
+  <li>Every member runs the backup loop with the same configuration. Members hold log entries they would otherwise purge until the archive has them (the <strong>purge hold</strong>), so a new leader continues the same archive without starting over.</li>
+  <li>Retention is by time: every point of the last 30 days stays restorable (<code>--backup-retention-ms</code>); older bases are thinned to one per base interval, and segments no kept base needs are deleted.</li>
+</ul>
+
+<h2 id="configure">Configure continuous backup</h2>
+
+<p>Give every member the same three settings: where backups go, a keystore file and the KEK file. In S3:</p>
+
+<pre><code class="language-bash">head -c 32 /dev/urandom &gt; backup.kek          # keep it outside the backup store
+export FLOWER_BACKUP_S3_REGION=eu-central-2     # else AWS_REGION, and so on
+cargo flower serve --dir data --id 1 --bootstrap 1 --admin-token secret \
+  --backup-url s3://acme-backups/flower --keystore /etc/flower/backup.keystore --kek-file /etc/flower/backup.kek</code></pre>
+
+<p>S3 reads its settings from <code>FLOWER_BACKUP_S3_REGION</code>, <code>FLOWER_BACKUP_S3_ENDPOINT</code> (for another S3 implementation), <code>FLOWER_BACKUP_S3_ADDRESSING</code> (<code>path</code> or <code>virtual</code>) and <code>FLOWER_BACKUP_S3_ACCESS_KEY_ID</code>, <code>…_SECRET_ACCESS_KEY</code> and <code>…_SESSION_TOKEN</code>; each falls back to its <code>AWS_</code> name, and the credentials to AWS's usual chain. Large objects go up as multipart uploads. To back up to a directory instead — shared storage, or one you copy elsewhere — pass <code>--backup-dir /backups/flower</code> (or <code>--backup-url file:///backups/flower</code>).</p>
+
+<table>
+  <thead><tr><th>Flag</th><th>Environment</th><th>Default</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td><code>--backup-url</code></td><td><code>FLOWER_BACKUP_URL</code></td><td>off</td><td><code>s3://BUCKET/PREFIX</code> or <code>file:///PATH</code>. Turns continuous backup on (with the next two).</td></tr>
+    <tr><td><code>--backup-dir</code></td><td><code>FLOWER_BACKUP_DIR</code></td><td>off</td><td>A directory, instead of <code>--backup-url</code>.</td></tr>
+    <tr><td><code>--keystore</code></td><td><code>FLOWER_BACKUP_KEYSTORE</code></td><td></td><td>Backup keystore file.</td></tr>
+    <tr><td><code>--kek-file</code></td><td><code>FLOWER_BACKUP_KEK_FILE</code></td><td></td><td>File holding exactly 32 raw bytes.</td></tr>
+    <tr><td><code>--backup-archive-ms</code></td><td><code>FLOWER_BACKUP_ARCHIVE_MS</code></td><td>1 s</td><td>How often applied entries are archived.</td></tr>
+    <tr><td><code>--backup-base-ms</code></td><td><code>FLOWER_BACKUP_BASE_MS</code></td><td>24 h</td><td>Maximum age of the newest base.</td></tr>
+    <tr><td><code>--backup-base-bytes</code></td><td><code>FLOWER_BACKUP_BASE_BYTES</code></td><td>64 MiB</td><td>A new base is also due once the archive since the last one outgrows both this and that base; 0 leaves bases to time.</td></tr>
+    <tr><td><code>--backup-retention-ms</code></td><td><code>FLOWER_BACKUP_RETENTION_MS</code></td><td>30 days</td><td>How far back restores reach.</td></tr>
+    <tr><td><code>--backup-retention-interval-ms</code></td><td><code>FLOWER_BACKUP_RETENTION_INTERVAL_MS</code></td><td>1 h</td><td>How often retention runs, besides after each base.</td></tr>
+    <tr><td><code>--backup-part-bytes</code></td><td><code>FLOWER_BACKUP_PART_BYTES</code></td><td>16 MiB</td><td>Multipart upload part size (at least 5 MiB).</td></tr>
+    <tr><td><code>--backup-hold-max-bytes</code></td><td><code>FLOWER_BACKUP_HOLD_MAX_BYTES</code></td><td>1 GiB</td><td>Most log bytes held back for an archive that cannot keep up; 0 = no cap.</td></tr>
+    <tr><td><code>--backup-hold-max-entries</code></td><td><code>FLOWER_BACKUP_HOLD_MAX_ENTRIES</code></td><td>0 (no cap)</td><td>Same, in entries.</td></tr>
+  </tbody>
+</table>
+
+<p>If the store is unreachable for long, the purge hold grows the log; past the caps, the oldest entries go unarchived, the next base starts a new archive, and point-in-time targets inside the gap can no longer be restored. Without caps, the log grows until the disk fills. Groups other than <code>root</code> back up under <code>groups/&lt;name&gt;</code> inside the same location, with keystore <code>&lt;keystore&gt;.&lt;name&gt;</code>, sealed by the same KEK.</p>
+
+<h2 id="operate">Check on backups</h2>
+
+<pre><code class="language-bash">export FLOWER_ADMIN_TOKEN=secret
+export FLOWER_BACKUP_URL=s3://acme-backups/flower FLOWER_BACKUP_KEYSTORE=/etc/flower/backup.keystore FLOWER_BACKUP_KEK_FILE=/etc/flower/backup.kek
+cargo flower backup status      # this member's loop, as JSON
+cargo flower backup             # take a full backup now, through the member at FLOWER_ENDPOINT
+cargo flower backup list        # offline: reads the store itself</code></pre>
+
+<pre><code class="language-console">backup_id=d004740955c0e17b282e95e7a5f9a94d objects=2 covered_index=45</code></pre>
+
+<p><code>list</code> works offline and prints, oldest first, each backup's ID, manifest, history, the log index it covers and how far a restore from it reaches through the archive (<code>restorable_through</code>, also as a time):</p>
+
+<pre><code class="language-console">backup_id=61c3fbf2d67cb414fb82287ab23b05ac manifest=flower-backup/v1/manifest/60e7f1392eb984c241b6264e9f9e0484 created_ms=1793543015088 history=f5af2bdc0a20ad75 covered_index=45 restorable_through=45 restorable_through_ms=- objects=2 bytes=276005
+backup_id=d004740955c0e17b282e95e7a5f9a94d manifest=flower-backup/v1/manifest/ac91a3ee68e13e9630bbb00e1b1c8bf6 created_ms=1793543017459 history=f5af2bdc0a20ad75 covered_index=45 restorable_through=46 restorable_through_ms=1793543023251 objects=2 bytes=276005</code></pre>
+
+<p>The admin dashboard shows the same, and <code>/v1/metrics</code> reports the last backup.</p>
+
+<h2 id="restore">Restore</h2>
+
+<p>Restore is offline: stop the member, restore into its directory, start it again with <code>--bootstrap</code>. To restore a whole cluster, stop <strong>every</strong> member, restore the same target on each, and start them together.</p>
+
+<pre><code class="language-bash"># with FLOWER_BACKUP_URL, FLOWER_BACKUP_KEYSTORE and FLOWER_BACKUP_KEK_FILE set as above
+cargo flower backup restore --dir data                          # the newest state the backups hold
+cargo flower backup restore --dir data --at-ms 1793491200000    # the state at a time
+cargo flower backup restore --dir data --index 48211            # exactly through a log index
+cargo flower backup restore --dir data --manifest &lt;manifest&gt;    # one backup, as taken
+
+cargo flower serve --dir data --id 1 --bootstrap 1 --admin-token secret --key-wrapping-file wrapping.key</code></pre>
+
+<pre><code class="language-console">restored backup_id=d004740955c0e17b282e95e7a5f9a94d manifest=flower-backup/v1/manifest/ac91a3ee68e13e9630bbb00e1b1c8bf6 history=f5af2bdc0a20ad75 index=46 replayed=1 reached_ms=1793543023251
+start the node with --bootstrap to serve the restored state</code></pre>
+
+<ul>
+  <li>Without a target, the newest state the backups hold: the latest base, then every entry archived after it. <code>--manifest</code> restores one backup exactly as it was taken.</li>
+  <li><code>--at-ms</code> replays every write stamped at or before that time: the result is at or just before the target, never after it.</li>
+  <li><code>--index</code> counts in one history; pass <code>--history</code> (as <code>list</code> prints it) to pick another than the latest backup's.</li>
+  <li>Restore registers every module again, so pass the same <code>--guest-*</code> limits the cluster runs with.</li>
+  <li>Each database's managed-key catalog is restored with it, still sealed: start the restored members with the same <code>--key-wrapping-file</code>, or managed keys answer <code>KEYS_LOCKED</code>.</li>
+  <li>The restore replaces the group file and removes the Raft log, so the member starts a new log over the restored state: start it with <code>--bootstrap</code>, and for a cluster bootstrap the restored members together, as when you founded it.</li>
+</ul>
+
+<h2 id="after-a-restore">After a restore</h2>
+
+<p>A restore to an earlier point starts a <strong>new history</strong> of each database, with a fresh incarnation:</p>
+
+<ul>
+  <li>Scoped request IDs (<code>f1:</code>/<code>f2:</code>), retry sessions and queue claims minted in the old history are refused with <code>wrong_history</code>; plain idempotency keys replay from restored receipts.</li>
+  <li>Log positions restart; synced device replicas see <code>HistoryChanged</code> and must rebuild.</li>
+  <li>Everything after the target is gone — including work your workers already did in the outside world. Fence the old deployment (it keeps running if you restored elsewhere), and reconcile external effects.</li>
+  <li>Groups restore independently: a restore is not atomic across groups.</li>
+</ul>
+
+<div class="callout">
+<p><span class="callout-title">Upgrades across a compatibility contract</span> A member refuses to open data files written under another compatibility contract, so a Flower upgrade that changes the contract cannot reuse a member's directory. A backup is the way across: take one with the old build, stop every member, restore into fresh directories with the new build, and bootstrap. See <a href="operations.html#upgrades">Upgrading Flower</a>.</p>
+</div>
+<!-- /content -->
+      <nav class="page-nav" aria-label="Previous and next">
+        <a class="prev" href="deployments.html" rel="prev">← Deployments</a>
+        <a class="next" href="operations.html" rel="next">Operating a cluster →</a>
+      </nav>
+      <footer class="site-footer">
+        <p><a href="https://github.com/ipsomachina/flower">Flower on GitHub</a> · <a href="../../LICENSE">MIT license</a> · <a href="https://ipsomachina.com/privacy">Privacy &amp; legal notice</a></p>
+        <p>© 2026 <a href="https://ipsomachina.com">Ipso Machina</a> · Avenue de Chamonix 3 · 1207 Genève · Switzerland</p>
+      </footer>
+    </main>
+    <nav class="toc" aria-label="On this page">
+      <h2>On this page</h2>
+      <ul>
+        <li class="depth-2"><a href="#how-it-works">How it works</a></li>
+        <li class="depth-2"><a href="#configure">Configure continuous backup</a></li>
+        <li class="depth-2"><a href="#operate">Check on backups</a></li>
+        <li class="depth-2"><a href="#restore">Restore</a></li>
+        <li class="depth-2"><a href="#after-a-restore">After a restore</a></li>
+      </ul>
+    </nav>
+  </div>
+  </div>
+  <script src="../assets/search-index.js"></script>
+  <script src="../assets/docs.js"></script>
+</body>
+</html>

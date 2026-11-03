@@ -1,0 +1,134 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+env:
+  RUST_VERSION: 1.99.1
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  CARGO_BUILD_JOBS: 2
+  CARGO_PROFILE_DEV_DEBUG: 0
+  CARGO_PROFILE_TEST_DEBUG: 0
+  RUST_BACKTRACE: 1
+
+jobs:
+  nix:
+    name: Nix development shell
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: cachix/install-nix-action@d9186cbdca7adedf113a159fa91f725a27866771 # v31
+        with:
+          extra_nix_config: experimental-features = nix-command flakes
+      - run: nix fmt -- --check flake.nix nix/bun.nix
+      - run: nix flake check --all-systems --no-build --no-update-lock-file
+      - run: nix develop --no-update-lock-file --command bash scripts/check-dev-shell.sh
+
+  tests:
+    name: Rust (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Install native build tools
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y clang cmake pkg-config libssl-dev
+      - name: Install Rust and Wasm target
+        run: |
+          rustup toolchain install "$RUST_VERSION" --profile minimal --component rustfmt --component clippy --target wasm32-unknown-unknown
+          rustup default "$RUST_VERSION"
+      - uses: Swatinem/rust-cache@e9d7b9f1e587218970671bac74e5511ed9506e6a # v2
+        with:
+          cache-on-failure: true
+      - name: Formatting
+        run: cargo fmt --all -- --check
+      - name: Clippy
+        run: cargo clippy --locked --workspace --all-targets --features flower-client/replica,flower-client/conformance -- -D warnings
+      - name: Workspace tests (including process faults and S3)
+        run: cargo test --locked --workspace --features flower-client/replica,flower-client/conformance,flower-backup/s3
+
+  docs:
+    name: Documentation and protocol contracts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.4
+      - name: Install build tools and Rust
+        run: |
+          sudo apt-get update && sudo apt-get install -y clang cmake pkg-config
+          rustup toolchain install "$RUST_VERSION" --profile minimal --component clippy --target wasm32-unknown-unknown
+          rustup default "$RUST_VERSION"
+      - uses: Swatinem/rust-cache@e9d7b9f1e587218970671bac74e5511ed9506e6a # v2
+        with:
+          workspaces: web/docs/examples
+      - run: bun web/docs/tools/sync.mjs --check
+      - run: bun web/docs/tools/check-protocol.mjs
+      - run: cargo clippy --locked --manifest-path web/docs/examples/Cargo.toml -p tasks -p doc-snippets --target wasm32-unknown-unknown -- -D warnings
+      - run: cargo clippy --locked --manifest-path web/docs/examples/Cargo.toml --all-targets -- -D warnings
+      - run: cargo test --locked --manifest-path web/docs/examples/Cargo.toml
+
+  packages:
+    name: Verify publishable crate archives
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.4
+      - name: Install build tools and Rust
+        run: |
+          sudo apt-get update && sudo apt-get install -y clang cmake pkg-config
+          rustup toolchain install "$RUST_VERSION" --profile minimal
+          rustup default "$RUST_VERSION"
+      - uses: Swatinem/rust-cache@e9d7b9f1e587218970671bac74e5511ed9506e6a # v2
+        with:
+          workspaces: '. -> target/release-packages'
+      - run: bun test ./scripts
+      - run: bun scripts/release.mjs --check
+      - run: bun scripts/release.mjs --dry-run
+
+  image:
+    name: Build and smoke-test container
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          load: true
+          tags: flower:ci
+          cache-from: type=gha,scope=flower-image
+          cache-to: type=gha,mode=max,scope=flower-image
+      - run: bash scripts/test-image.sh flower:ci

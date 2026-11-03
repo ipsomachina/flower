@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Flower documentation</title>
+  <meta name="description" content="What Flower is, how an application fits together, and where to go next.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://flower.ipsomachina.com/docs/">
+  <meta property="og:title" content="Flower documentation">
+  <meta property="og:description" content="What Flower is, how an application fits together, and where to go next.">
+  <meta property="og:image" content="https://flower.ipsomachina.com/social.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Flower logo on a white background">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" type="image/svg+xml" href="../favicon.svg">
+  <link rel="stylesheet" href="assets/docs.css">
+</head>
+<body data-root="">
+  <a class="skip-link" href="#content">Skip to content</a>
+  <header class="site-header">
+    <button class="menu-button" id="menu-toggle" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="sidebar"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M3 5.5h14M3 10h14M3 14.5h14"/></svg></button>
+    <a class="brand" href="index.html"><svg viewBox="0 0 80 80" width="32" height="32" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(0 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(60 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(120 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(180 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(240 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(300 40 40)"/></svg><span class="brand-name">FLOWER</span><span class="brand-docs">Documentation</span></a>
+    <div class="header-spacer"></div>
+    <div class="search" role="search">
+      <input id="search-input" type="search" placeholder="Search" autocomplete="off" spellcheck="false" aria-label="Search the documentation" aria-controls="search-results" aria-expanded="false" role="combobox">
+      <div class="search-results" id="search-results" role="listbox" hidden></div>
+    </div>
+    <a class="header-link" href="../index.html">Home</a>
+    <a class="header-link" href="https://github.com/ipsomachina/flower">GitHub</a>
+  </header>
+  <div class="scrim" id="scrim" hidden></div>
+  <div class="layout">
+  <nav class="sidebar" id="sidebar" aria-label="Documentation">
+    <h2>Get started</h2>
+    <ul>
+      <li><a href="index.html" aria-current="page">Introduction</a></li>
+      <li><a href="quickstart.html">Quickstart</a></li>
+    </ul>
+    <h2>Concepts</h2>
+    <ul>
+      <li><a href="concepts/databases.html">Databases, modules and groups</a></li>
+      <li><a href="concepts/collections.html">Collections and indexes</a></li>
+      <li><a href="concepts/methods.html">Queries and mutations</a></li>
+      <li><a href="concepts/derived.html">Derived values and aggregates</a></li>
+      <li><a href="concepts/consistency.html">Revisions and consistency</a></li>
+      <li><a href="concepts/retries.html">Retries and receipts</a></li>
+      <li><a href="concepts/watches.html">Watches</a></li>
+      <li><a href="concepts/time.html">Time</a></li>
+      <li><a href="concepts/queues-timers.html">Queues and timers</a></li>
+      <li><a href="concepts/modules.html">Modules and interfaces</a></li>
+      <li><a href="concepts/transactions.html">Transactions and partitions</a></li>
+    </ul>
+    <h2>Guides</h2>
+    <ul>
+      <li><a href="guides/rust-client.html">Calling Flower from Rust</a></li>
+      <li><a href="guides/sql.html">SQL queries</a></li>
+      <li><a href="guides/errors-retries.html">Errors and retries in clients</a></li>
+      <li><a href="guides/auth.html">Authentication and authorization</a></li>
+      <li><a href="guides/crypto.html">Guest cryptography</a></li>
+      <li><a href="guides/workers.html">Worker queues</a></li>
+      <li><a href="guides/deployments.html">Deployments</a></li>
+      <li><a href="guides/backups.html">Backups and restore</a></li>
+      <li><a href="guides/operations.html">Operating a cluster</a></li>
+      <li><a href="guides/testing.html">Testing applications</a></li>
+    </ul>
+    <h2>Reference</h2>
+    <ul>
+      <li><a href="reference/http.html">HTTP API</a></li>
+      <li><a href="reference/cli.html">cargo flower</a></li>
+      <li><a href="reference/sdk.html">flower-sdk</a></li>
+      <li><a href="reference/errors.html">Error codes and limits</a></li>
+    </ul>
+  </nav>
+  <div class="main">
+    <main class="content" id="content">
+      <p class="breadcrumb">Get started</p>
+<!-- content -->
+<h1>Flower documentation</h1>
+<p>Flower's code and documentation are open source under the <a href="../LICENSE">MIT license</a>.</p>
+<p class="lede">Flower is a replicated database of source records and reactive derived values. You write the application logic in Rust, compile it to WebAssembly, deploy it into a cluster, and call it by name over HTTP.</p>
+<p>Explore Flower’s source and examples in the <a href="https://github.com/ipsomachina/flower">GitHub repository</a>. These docs cover the current implementation.</p>
+
+<p>These pages are for developers building applications on Flower: writing guest modules with <code>flower-sdk</code>, deploying them with <code>cargo flower</code>, calling them from any HTTP client or from Rust with <code>flower-client</code>, and running the native workers and clusters that serve them. Read them top to bottom the first time — the <a href="quickstart.html">quickstart</a>, then the concepts, then the guides — and come back to the reference.</p>
+
+<h2 id="the-shape-of-an-application">The shape of an application</h2>
+
+<p>A Flower application is a <strong>module</strong>: a Rust crate built as a <code>wasm32-unknown-unknown</code> <code>cdylib</code>. Each operation and record type is declared once, with everything about it, and one static <code>App::new(&amp;[…])</code> lists the module's components:</p>
+
+<ul>
+  <li><strong>Collections</strong> of typed records, with <strong>indexes</strong> and <strong>references</strong> the engine maintains for you.</li>
+  <li><strong>Queries</strong>, which read, and <strong>mutations</strong>, which read and write. Both are plain synchronous Rust functions, each declaring its own name, consistency, access and deadline.</li>
+  <li><strong>Derived values</strong> and <strong>aggregates</strong>: computations the engine caches, tracks the dependencies of, and keeps current as records change.</li>
+  <li><strong>HTTP exposure</strong>, opted into per operation: nothing answers over HTTP unless its declaration says <code>http</code>.</li>
+  <li>Components such as an <strong>authorization component</strong>, <strong>queues</strong>, <strong>triggers</strong>, <strong>maintenance tasks</strong>, <strong>managed keys</strong>, and <strong>imports</strong> of other modules' exports.</li>
+</ul>
+
+<figure class="diagram">
+<svg viewBox="0 0 720 300" width="720" height="300" role="img" aria-labelledby="arch-title">
+  <title id="arch-title">A client calls a named method on any member; the guest runs against the engine; Raft replicates the accepted consequences to every replica.</title>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
+    </marker>
+  </defs>
+  <g fill="none" stroke="currentColor" stroke-width="1.2">
+    <rect x="10" y="40" width="130" height="56"/>
+    <rect x="10" y="190" width="130" height="56"/>
+    <rect x="200" y="20" width="300" height="250"/>
+    <rect x="220" y="60" width="120" height="50"/>
+    <rect x="360" y="60" width="120" height="50"/>
+    <rect x="220" y="140" width="260" height="44"/>
+    <rect x="220" y="210" width="260" height="40"/>
+    <rect x="570" y="70" width="140" height="44"/>
+    <rect x="570" y="160" width="140" height="44"/>
+  </g>
+  <g fill="none" stroke="currentColor" stroke-width="1.2" marker-end="url(#arrow)">
+    <path d="M140 68 H218"/>
+    <path d="M140 218 C 180 218, 180 120, 218 100"/>
+    <path d="M342 85 H358"/>
+    <path d="M358 92 H344" marker-end="url(#arrow)"/>
+    <path d="M350 110 V138"/>
+    <path d="M350 184 V208"/>
+    <path d="M482 230 C 530 230, 530 92, 568 92"/>
+    <path d="M482 230 C 530 230, 530 182, 568 182"/>
+  </g>
+  <g fill="currentColor" font-size="13" text-anchor="middle">
+    <text x="75" y="64">HTTP client</text>
+    <text x="75" y="82" font-size="11" font-style="italic">or flower-client</text>
+    <text x="75" y="214">Native worker</text>
+    <text x="75" y="232" font-size="11" font-style="italic">flower-worker</text>
+    <text x="350" y="40" font-size="12" font-style="italic">One member of a Raft group</text>
+    <text x="280" y="82">HTTP API</text>
+    <text x="280" y="98" font-size="11" font-style="italic">admission, auth</text>
+    <text x="420" y="82">Your module</text>
+    <text x="420" y="98" font-size="11" font-style="italic">Rust → Wasm</text>
+    <text x="350" y="160">Engine: collections, indexes,</text>
+    <text x="350" y="176">derived values, dependencies</text>
+    <text x="350" y="235">Raft log: accepted changes</text>
+    <text x="640" y="96">Replica</text>
+    <text x="640" y="186">Replica</text>
+  </g>
+</svg>
+<figcaption>Any member answers any call; followers forward writes to the leader. Replicas apply accepted changes without running your code again.</figcaption>
+</figure>
+
+<p>When a client calls a mutation, the leader runs your Rust function inside an isolated WebAssembly instance. Every read it makes is tracked and every write is staged. When the function returns, the engine validates the staged writes against your schemas, references and access rules, updates indexes and the derived values that depended on what changed, and commits all of it as one entry in the Raft log. Followers apply that entry; they never re-run your code. A query reads one consistent snapshot. A <a href="concepts/watches.html">watch</a> keeps a query's result up to date as the records it read change.</p>
+
+<p>Work that must leave the database — sending email, charging a card, calling another service — goes through <a href="concepts/queues-timers.html">durable queues</a> that native Rust workers claim under fenced leases, and through <a href="concepts/queues-timers.html#timers">timers</a> that fire mutations later. Guests themselves never open sockets.</p>
+
+<h2 id="what-flower-guarantees">What Flower guarantees</h2>
+
+<ul>
+  <li><strong>Atomic mutations.</strong> A mutation's writes, the index entries they imply and the derived values that must change with them are published together, or not at all.</li>
+  <li><strong>Linearizable reads by default.</strong> A query declared <code>Linearizable</code> sees every write that completed before it began, whichever member serves it. Queries can opt into cheaper <a href="concepts/consistency.html">replica-local reads</a>, with or without a staleness bound.</li>
+  <li><strong>Exactly-once effects for retried writes.</strong> A mutation sent again with the same request ID answers the original outcome instead of running twice — see <a href="concepts/retries.html">retries and receipts</a>.</li>
+  <li><strong>Isolation between modules.</strong> A module exports nothing unless it says so; another module can read only what it exports and can never write its collections directly.</li>
+  <li><strong>Bounded guests.</strong> Every invocation runs under memory and stack limits and the deadline its method declares; a runaway guest fails its own call, never the process, and whether a call fits its budget does not depend on which member runs it.</li>
+</ul>
+
+<h2 id="where-to-go-next">Where to go next</h2>
+
+<ul class="cards">
+  <li><a href="quickstart.html"><strong>Quickstart</strong></a> — install <code>cargo flower</code>, write a to-do module, serve it on one node and call it with <code>curl</code>.</li>
+  <li><a href="concepts/databases.html"><strong>Concepts</strong></a> — the data model, methods, derived values, consistency, retries, watches, time, queues, modules and transactions.</li>
+  <li><a href="guides/rust-client.html"><strong>Guides</strong></a> — calling Flower from Rust, authentication, cryptography, workers, deployments, backups, operations and testing.</li>
+  <li><a href="reference/http.html"><strong>Reference</strong></a> — the <a href="reference/http.html">HTTP API</a>, the <a href="reference/cli.html"><code>cargo flower</code> CLI</a>, the <a href="reference/sdk.html">SDK</a>, and <a href="reference/errors.html">error codes and limits</a>.</li>
+</ul>
+
+<h2 id="the-crates">The crates you will use</h2>
+
+<table>
+  <thead><tr><th>Crate</th><th>Where it runs</th><th>What it is for</th></tr></thead>
+  <tbody>
+    <tr><td><code>flower-sdk</code></td><td>Your guest (Wasm)</td><td>Types, schemas, collections, contexts and components for writing modules. <code>no_std</code> plus <code>alloc</code>, no runtime dependencies.</td></tr>
+    <tr><td><code>cargo-flower</code></td><td>Your machine, your servers</td><td>The <code>cargo flower</code> command: build and inspect guests, plan and deploy them, call methods, and <code>serve</code> a cluster node.</td></tr>
+    <tr><td><code>flower-client</code></td><td>Native Rust</td><td>An HTTP client with retries, deadlines, watches, transactions and admin calls, which calls methods type-checked through the descriptors your guest crate declares.</td></tr>
+    <tr><td><code>flower-worker</code></td><td>Native Rust</td><td>Queue workers with leases, concurrency control and graceful draining, and the <code>reconcile</code> worker for external values.</td></tr>
+  </tbody>
+</table>
+
+<p>The Flower repository also carries complete example guests in <code>examples/</code>: <code>goblin-pizza</code> (orders, an aggregate, oven timers and a delivery queue), <code>crypto-ticket</code> (signed tickets under a managed key), <code>external-transactions</code> and the <code>typed-modules-*</code> trio (a provider and a consumer linked through an interface crate). These docs quote them often.</p>
+<!-- /content -->
+      <nav class="page-nav" aria-label="Previous and next">
+        
+        <a class="next" href="quickstart.html" rel="next">Quickstart →</a>
+      </nav>
+      <footer class="site-footer">
+        <p><a href="https://github.com/ipsomachina/flower">Flower on GitHub</a> · <a href="../LICENSE">MIT license</a> · <a href="https://ipsomachina.com/privacy">Privacy &amp; legal notice</a></p>
+        <p>© 2026 <a href="https://ipsomachina.com">Ipso Machina</a> · Avenue de Chamonix 3 · 1207 Genève · Switzerland</p>
+      </footer>
+    </main>
+    <nav class="toc" aria-label="On this page">
+      <h2>On this page</h2>
+      <ul>
+        <li class="depth-2"><a href="#the-shape-of-an-application">The shape of an application</a></li>
+        <li class="depth-2"><a href="#what-flower-guarantees">What Flower guarantees</a></li>
+        <li class="depth-2"><a href="#where-to-go-next">Where to go next</a></li>
+        <li class="depth-2"><a href="#the-crates">The crates you will use</a></li>
+      </ul>
+    </nav>
+  </div>
+  </div>
+  <script src="assets/search-index.js"></script>
+  <script src="assets/docs.js"></script>
+</body>
+</html>

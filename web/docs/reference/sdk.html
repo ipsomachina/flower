@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>flower-sdk · Flower docs</title>
+  <meta name="description" content="The guest SDK surface: types, macros, contexts and components.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://flower.ipsomachina.com/docs/reference/sdk.html">
+  <meta property="og:title" content="flower-sdk">
+  <meta property="og:description" content="The guest SDK surface: types, macros, contexts and components.">
+  <meta property="og:image" content="https://flower.ipsomachina.com/social.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Flower logo on a white background">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" type="image/svg+xml" href="../../favicon.svg">
+  <link rel="stylesheet" href="../assets/docs.css">
+</head>
+<body data-root="../">
+  <a class="skip-link" href="#content">Skip to content</a>
+  <header class="site-header">
+    <button class="menu-button" id="menu-toggle" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="sidebar"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M3 5.5h14M3 10h14M3 14.5h14"/></svg></button>
+    <a class="brand" href="../index.html"><svg viewBox="0 0 80 80" width="32" height="32" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(0 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(60 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(120 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(180 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(240 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(300 40 40)"/></svg><span class="brand-name">FLOWER</span><span class="brand-docs">Documentation</span></a>
+    <div class="header-spacer"></div>
+    <div class="search" role="search">
+      <input id="search-input" type="search" placeholder="Search" autocomplete="off" spellcheck="false" aria-label="Search the documentation" aria-controls="search-results" aria-expanded="false" role="combobox">
+      <div class="search-results" id="search-results" role="listbox" hidden></div>
+    </div>
+    <a class="header-link" href="../../index.html">Home</a>
+    <a class="header-link" href="https://github.com/ipsomachina/flower">GitHub</a>
+  </header>
+  <div class="scrim" id="scrim" hidden></div>
+  <div class="layout">
+  <nav class="sidebar" id="sidebar" aria-label="Documentation">
+    <h2>Get started</h2>
+    <ul>
+      <li><a href="../index.html">Introduction</a></li>
+      <li><a href="../quickstart.html">Quickstart</a></li>
+    </ul>
+    <h2>Concepts</h2>
+    <ul>
+      <li><a href="../concepts/databases.html">Databases, modules and groups</a></li>
+      <li><a href="../concepts/collections.html">Collections and indexes</a></li>
+      <li><a href="../concepts/methods.html">Queries and mutations</a></li>
+      <li><a href="../concepts/derived.html">Derived values and aggregates</a></li>
+      <li><a href="../concepts/consistency.html">Revisions and consistency</a></li>
+      <li><a href="../concepts/retries.html">Retries and receipts</a></li>
+      <li><a href="../concepts/watches.html">Watches</a></li>
+      <li><a href="../concepts/time.html">Time</a></li>
+      <li><a href="../concepts/queues-timers.html">Queues and timers</a></li>
+      <li><a href="../concepts/modules.html">Modules and interfaces</a></li>
+      <li><a href="../concepts/transactions.html">Transactions and partitions</a></li>
+    </ul>
+    <h2>Guides</h2>
+    <ul>
+      <li><a href="../guides/rust-client.html">Calling Flower from Rust</a></li>
+      <li><a href="../guides/sql.html">SQL queries</a></li>
+      <li><a href="../guides/errors-retries.html">Errors and retries in clients</a></li>
+      <li><a href="../guides/auth.html">Authentication and authorization</a></li>
+      <li><a href="../guides/crypto.html">Guest cryptography</a></li>
+      <li><a href="../guides/workers.html">Worker queues</a></li>
+      <li><a href="../guides/deployments.html">Deployments</a></li>
+      <li><a href="../guides/backups.html">Backups and restore</a></li>
+      <li><a href="../guides/operations.html">Operating a cluster</a></li>
+      <li><a href="../guides/testing.html">Testing applications</a></li>
+    </ul>
+    <h2>Reference</h2>
+    <ul>
+      <li><a href="http.html">HTTP API</a></li>
+      <li><a href="cli.html">cargo flower</a></li>
+      <li><a href="sdk.html" aria-current="page">flower-sdk</a></li>
+      <li><a href="errors.html">Error codes and limits</a></li>
+    </ul>
+  </nav>
+  <div class="main">
+    <main class="content" id="content">
+      <p class="breadcrumb">Reference</p>
+<!-- content -->
+<h1>flower-sdk</h1>
+<p class="lede">The guest SDK: <code>no_std</code> plus <code>alloc</code>, no runtime dependencies. This page lists its public surface by module; the concept pages explain how the pieces fit.</p>
+
+<h2 id="crate-setup">Crate setup</h2>
+
+<ul>
+  <li>A guest is a <code>cdylib</code> built for <code>wasm32-unknown-unknown</code>; add <code>"rlib"</code> so tests and Rust clients can link its types and descriptors (<a href="../guides/testing.html">Testing</a>, <a href="../guides/rust-client.html#typed-calls">typed calls</a>).</li>
+  <li>The derive and attribute macros generate <code>::flower_sdk</code> and <code>::alloc</code> paths: put <code>extern crate alloc;</code> at the crate root.</li>
+  <li>Guests may use <code>std</code> types that only allocate; operating-system APIs (files, sockets, threads, clocks) are not available.</li>
+  <li>End the crate with <code>flower_sdk::export!(APP);</code>.</li>
+</ul>
+
+<h2 id="crate-root">Crate root</h2>
+
+<table>
+  <thead><tr><th>Item</th><th>Kind</th><th></th></tr></thead>
+  <tbody>
+    <tr><td><code>App</code></td><td>struct</td><td><code>App::new(&amp;[&amp;component, …])</code>: the module, one flat list of components; <code>.init(fn() -&gt; Result&lt;()&gt;)</code>. See <a href="../concepts/methods.html#the-app">The App assembly</a>.</td></tr>
+    <tr><td><code>Component</code></td><td>trait</td><td>Anything an app lists: methods, derived values, transactions, collections, triggers, tasks, retention hooks, queues, key declarations, the authorization component, imports and composites (an interface provider, an external value). Every accessor defaults to nothing; a static array of components is one component.</td></tr>
+    <tr><td><code>Op&lt;A, T, E = Failure&gt;</code></td><td>struct</td><td>A method with its types, as <code>#[query]</code> and <code>#[mutation]</code> declare it: argument struct <code>A</code>, result <code>T</code>, declared errors <code>E</code>. Dereferences to its <code>Method</code>; <code>.named(name)</code> and <code>.consistency(c)</code> make twins. Timers and the native client take it.</td></tr>
+    <tr><td><code>Method</code></td><td>struct</td><td>The raw descriptor: <code>Method::query(name, cb)</code>, <code>Method::mutation(name, cb)</code> over <code>fn(&amp;mut Ctx, Value) -&gt; Result&lt;Value&gt;</code>, with <code>.args</code>, <code>.result</code>, <code>.errors</code> (schemas), <code>.consistency</code>, <code>.named</code>, <code>.http()</code>, <code>.access(Access)</code>, <code>.export()</code>, <code>.export_to(&amp;["module"])</code>, <code>.timeout_ms(ms)</code>.</td></tr>
+    <tr><td><code>MethodKind</code>, <code>Export</code></td><td>enums</td><td><code>Query</code>, <code>Mutation</code>; <code>Private</code>, <code>All</code>, <code>Only(&amp;[…])</code> (an empty list admits no module).</td></tr>
+    <tr><td><code>Consistency</code></td><td>enum</td><td><code>Linearizable</code> (the default), <code>ReplicaLocal</code>, <code>ReplicaLocalWithin(ms)</code>.</td></tr>
+    <tr><td><code>Derived</code>, <code>Aggregation</code></td><td>structs</td><td>Raw derived descriptor: <code>Derived::new(name, cb)</code> with <code>.args</code>, <code>.result</code>, <code>.errors</code>, <code>.export()</code>, <code>.materialize(…)</code>, <code>.access(fn() -&gt; Rule)</code>, <code>.aggregate(Aggregation)</code>.</td></tr>
+    <tr><td><code>Materialize</code></td><td>enum</td><td><code>Never</code>, <code>Always</code>, <code>Each(&amp;Collection)</code>.</td></tr>
+    <tr><td><code>Transaction</code>, <code>Plan</code>, <code>Call</code>, <code>Target</code>, <code>Committed</code>, <code>PlannerFn</code></td><td></td><td>A cross-database transaction planner: <code>Transaction::new(name, planner)</code> with <code>.args</code>, <code>.http()</code>, <code>.access(Access)</code>. See <a href="../concepts/transactions.html">Transactions</a>.</td></tr>
+    <tr><td><code>Definition</code></td><td>enum</td><td><code>Method(&amp;Method)</code>, <code>Derived(&amp;Derived)</code>, <code>Transaction(&amp;Transaction)</code>: what components declare.</td></tr>
+    <tr><td><code>Collection</code>, <code>IndexDef</code>, <code>Reference</code>, <code>Place</code>, <code>OnDelete</code>, <code>ReferenceTargets</code></td><td></td><td>Raw collection descriptors: <code>Collection::new(name)</code> with <code>.key_schema</code>, <code>.value_schema</code>, <code>.indexes</code>, <code>.references</code>, <code>.export()</code>, <code>.access(fn() -&gt; Policy)</code>.</td></tr>
+    <tr><td><code>Import</code>, <code>ImportedCollection</code>, <code>ImportedDerived</code>, <code>ImportedMethod</code>, <code>Contract</code></td><td>structs</td><td>What a module imports from another, by name or <code>$slot</code>; interface handles build them. See <a href="../concepts/modules.html">Modules</a>.</td></tr>
+    <tr><td><code>Trigger</code>, <code>Change</code>, <code>Task</code>, <code>TaskFailure</code>, <code>Retention</code>, <code>DeletedRow</code></td><td>structs</td><td>Raw hooks; prefer the typed traits in <a href="#features"><code>features</code></a>.</td></tr>
+    <tr><td><code>Value</code></td><td>enum</td><td><code>Null</code>, <code>Bool</code>, <code>Number(f64)</code>, <code>String</code>, <code>Array</code>, <code>Object(BTreeMap)</code>; <code>canonical_json()</code>.</td></tr>
+    <tr><td><code>Failure</code>, <code>Result&lt;T&gt;</code>, <code>fail</code>, <code>fail_with</code></td><td></td><td><code>Failure { code, message, details }</code> and constructors.</td></tr>
+    <tr><td><code>Principal</code></td><td>struct</td><td><code>{ subject, tenant, claims }</code>.</td></tr>
+    <tr><td><code>FlowerType</code>, <code>BusinessError</code></td><td>traits</td><td>Typed wire contracts and declared errors.</td></tr>
+    <tr><td><code>CallOutcome</code>, <code>CallError</code>, <code>CollectionRef</code>, <code>RangeBounds</code>, <code>RawPage</code>, <code>RawRow</code>, <code>HistoryEntry</code></td><td></td><td>Context call and scan types. Raw keys and range bounds are <code>Value</code>s.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="macros">Macros</h2>
+
+<table>
+  <thead><tr><th>Macro</th><th>Generates</th></tr></thead>
+  <tbody>
+    <tr><td><code>#[derive(FlowerType)]</code></td><td>Schema and codec. Named structs (closed objects), unit enums (string enums), single-payload enums (<code>{"tag","value"}</code>). Container option <code>#[flower(rename_all = "camelCase")]</code>; field options <code>#[flower(default)]</code>, <code>#[flower(default = path)]</code>, <code>#[flower(skip)]</code>. Two fields with one wire name do not compile; <code>r#type</code> is <code>"type"</code>.</td></tr>
+    <tr><td><code>#[derive(FlowerError)]</code></td><td><code>BusinessError</code> for an enum of unit or single-payload variants, each <code>#[flower(code = "UPPER_SNAKE_CASE")]</code> with optional <code>message = "…"</code> (default: the variant's name) and <code>retryable</code>; adds <code>is_retryable()</code>. One <code>#[flower(other)] Host(Failure)</code> variant takes every other failure and generates <code>From&lt;Failure&gt;</code>, so <code>?</code> works.</td></tr>
+    <tr><td><code>#[collection(name, key, value, index(…)*, reference(…)*, export?, access = policy?)]</code></td><td>On a marker struct, which becomes the typed handle and the component to list: <code>NAME</code>, <code>SOURCE</code>, typed <code>get(ctx, &amp;key)</code>, <code>set(ctx, &amp;key, &amp;value)</code>, <code>delete(ctx, &amp;key)</code>, <code>page(ctx, limit, after)</code>, one typed <code>Index</code> const per index, and <code>raw()</code>. <code>export</code> lets other modules read it; <code>access</code> names a <code>fn() -&gt; access::Policy</code>.</td></tr>
+    <tr><td><code>#[query(…)]</code>, <code>#[mutation(…)]</code></td><td>Keep the function; add a public argument struct (<code>GetTaskArgs</code> for <code>get_task</code>) and an <code>Op&lt;Args, T, E&gt;</code> static named in upper case. Options: <code>name = "…"</code>, <code>http</code>, <code>consistency = linearizable | replica_local</code> or <code>max_staleness_ms = N</code> (queries), <code>access = public | authenticated | path</code>, <code>export</code> or <code>callers("m", …)</code>, <code>timeout = "250ms"</code>, <code>rename_all = "camelCase"</code>, <code>bare_arg</code>. <code>Option</code> parameters may be omitted by callers. See <a href="../concepts/methods.html#options">options</a>.</td></tr>
+    <tr><td><code>#[derived(…)]</code></td><td>The same shape over a <code>DerivedCtx</code>, emitting a <code>Derived</code> static. Options: <code>name</code>, <code>export</code>, <code>materialize = always | never | each(CollectionMarker)</code>, <code>access = rule</code> (a <code>fn() -&gt; access::Rule</code> methods must satisfy to read the value).</td></tr>
+    <tr><td><code>#[interface(name = "…", handle = Api, provider = Name?)]</code></td><td>On a trait of <code>#[query]</code>, <code>#[mutation]</code> and <code>#[derived]</code> signatures: the consumer handle (<code>static X: Api = Api::import("$slot")</code>, both the typed calls — plus <code>try_</code> savepoint variants — and the component declaring the import) and <code>&lt;Trait&gt;Provider&lt;P&gt;</code>, whose <code>COMPONENT</code> brings every method exported to other modules, and <code>COMPONENT.http()</code> over HTTP too.</td></tr>
+    <tr><td><code>export!(APP)</code></td><td>The Wasm exports the host calls.</td></tr>
+    <tr><td><code>external!(static X = "name", input = f, tracks = "coll"?, result = schema?, lease = (ms, ms)?, http?)</code></td><td>An external value: a component bringing its collections, definitions and trigger; <code>http</code> exposes its worker operations. See <a href="../guides/workers.html#external-values">reconcile</a>.</td></tr>
+  </tbody>
+</table>
+
+<p><code>index(name = "by_x", fields(a, b), types(A, B))</code> — <code>types</code> is optional (components are <code>Value</code> without it). <code>reference(target = Marker, fields(f) | key | key_prefix, on_delete = restrict | cascade | set_null)</code>, or <code>targets(A, B)</code> with <code>discriminator = "field"</code> for a polymorphic field reference. A field reference needs an index whose fields start with the reference's fields.</p>
+
+<h2 id="application">Application assembly</h2>
+<p><code>#[interface]</code> also accepts <code>client = ClientName</code> to generate native query methods, <code>prepare_*</code> methods and command builders. See <a href="../guides/rust-client.html#workflow-builders">generated workflows</a>.</p>
+<p><code>#[flower_sdk::application]</code> on an inline module generates its public <code>APP</code> catalogue from lexical collection and method declarations. Mark additional component statics, such as SQL plans, endpoints or component arrays, with <code>#[component]</code>. Export it explicitly with <code>flower_sdk::export!(module::APP)</code>. HTTP exposure and access rules stay explicit on the methods. <code>App::new</code> remains available for custom initialization and composition. See the <a href="../guides/sql.html#endpoint">compiled SQL example</a>.</p>
+<h2 id="contexts">Contexts</h2>
+
+<table>
+  <thead><tr><th>Trait / type</th><th>Methods</th></tr></thead>
+  <tbody>
+    <tr><td><code>ReadCtx</code> (all contexts)</td><td><code>get</code>, <code>raw_get</code>, <code>get_derived</code>, <code>scan</code>, <code>raw_scan</code>, <code>range</code>, <code>now</code>, <code>clock</code>, <code>changes_at</code></td></tr>
+    <tr><td><code>MethodCtx</code> (queries, mutations)</td><td><code>principal</code>, <code>caller</code>, <code>call</code>, <code>try_call</code></td></tr>
+    <tr><td><code>MutationCtx</code></td><td><code>set</code>, <code>set_clearing</code>, <code>delete</code>, <code>delete_permanently</code>, <code>delete_if_match</code>, <code>call_mutation</code>, <code>try_mutation</code>, <code>materialize</code>, <code>unmaterialize</code></td></tr>
+    <tr><td><code>QueryCtx</code>, <code>MutationCtx</code>, <code>DerivedCtx</code></td><td><code>.crypto()</code>: the host's <a href="#crypto">cryptography</a>; <code>.ctx()</code>: the raw <code>Ctx</code>, for raw descriptors.</td></tr>
+    <tr><td><code>Ctx</code> (raw)</td><td>All of the above over <code>Value</code>s, plus <code>method_call</code>, <code>settle</code> and <code>history</code>.</td></tr>
+  </tbody>
+</table>
+
+<p>Bring the traits into scope (<code>use flower_sdk::{ReadCtx, MethodCtx};</code>) to call <code>clock</code>, <code>principal</code> and friends on typed contexts. Raw operations take keys as <code>Value</code>s (<code>&amp;Value::String(id)</code>, or any <code>FlowerType</code>'s <code>encode()</code>); typed handles take the key type itself.</p>
+
+<h2 id="typed">typed</h2>
+
+<table>
+  <thead><tr><th>Item</th><th></th></tr></thead>
+  <tbody>
+    <tr><td><code>Field&lt;T&gt;</code></td><td><code>Visible(T)</code> or <code>Redacted</code>: a field an access policy may hide.</td></tr>
+    <tr><td><code>DecimalI64</code>, <code>DecimalU64</code></td><td>Full-range integers as decimal strings.</td></tr>
+    <tr><td><code>Row&lt;K, V&gt;</code>, <code>Page&lt;K, V&gt;</code>, <code>decode_page</code></td><td>Typed scan results (<code>rows</code> of typed <code>key</code> and <code>value</code>, <code>cursor</code>).</td></tr>
+    <tr><td><code>TypedCollection</code></td><td>A collection's <code>Key</code>, <code>Value</code> and <code>NAME</code>; implemented by <code>#[collection]</code> markers.</td></tr>
+    <tr><td><code>call_typed</code>, <code>decode_outcome</code></td><td>Typed calls to other modules.</td></tr>
+    <tr><td><code>MAX_SAFE_INTEGER</code></td><td>2<sup>53</sup> − 1.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="index">index</h2>
+
+<table>
+  <thead><tr><th>Item</th><th></th></tr></thead>
+  <tbody>
+    <tr><td><code>Index&lt;K, V, F&gt;</code></td><td><code>.query()</code> or <code>.prefix(tuple)</code>, then <code>.gt/.gte/.lt/.lte(&amp;bound)</code>, <code>.after(cursor)</code>, <code>.reverse()</code>, <code>.page(ctx, limit)</code>; <code>.in_module(name)</code> for another module's export.</td></tr>
+    <tr><td><code>Source&lt;K, V&gt;</code></td><td><code>.get(ctx, &amp;key)</code>, <code>.page(ctx, limit, after)</code>, <code>.in_module(name)</code>.</td></tr>
+    <tr><td><code>TypedAggregate</code></td><td><code>Source</code>, <code>Fields</code>, <code>Group</code>, <code>Accumulator</code>, <code>NAME</code>, <code>INDEX</code>, <code>VERSION</code>, <code>PAGE</code>; <code>initial</code>, <code>add</code>, <code>remove</code>; provides <code>get(ctx, &amp;group)</code> and the <code>DERIVED</code> descriptor.</td></tr>
+    <tr><td><code>Reduced</code>, <code>ReduceCall</code>, <code>RowChange</code></td><td>Raw reducer types.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="sql">sql</h2>
+<p><code>SqlQuery&lt;P, R&gt;</code> is a registered, deployment-checked statement with typed parameters and rows. <code>SqlEndpoint</code> is a registered capability for request-time SQL over an explicit collection allowlist. Both use <code>SqlBudget::new(candidates, bytes, work)</code> (<code>scan</code> remains available), and offer <code>require_index</code>, <code>run</code>, <code>explain</code> and <code>explain_typed</code>. Endpoints additionally provide <code>run_as&lt;R&gt;</code> and accept any <code>FlowerType</code> parameter object. <code>SqlExplain</code> exposes common fields and retains the original response in <code>raw</code>.</p>
+<p>SQL executes with the enclosing invocation's snapshot, staged writes, authority and policies. Neither declaration creates an HTTP alias. Results have no continuation cursor. See <a href="../guides/sql.html">SQL queries</a> for supported syntax, limits and examples.</p>
+<h2 id="features">features</h2>
+
+<table>
+  <thead><tr><th>Item</th><th></th></tr></thead>
+  <tbody>
+    <tr><td><code>TypedTrigger</code></td><td><code>Source</code>, <code>NAME</code>, <code>run(ctx, key, before, after)</code>; list its <code>TRIGGER</code>.</td></tr>
+    <tr><td><code>TypedRetention</code></td><td><code>Source</code>, <code>NAME</code>, <code>retain(ctx, key, value, deleted_at)</code>; list its <code>RETENTION</code>.</td></tr>
+    <tr><td><code>TypedTask</code></td><td><code>NAME</code>, <code>due(ctx)</code>, <code>run(ctx)</code>, optional <code>HANDLES_FAILURES</code> and <code>on_error</code>; list its <code>TASK</code>.</td></tr>
+    <tr><td><code>raw_set</code>, <code>raw_delete</code></td><td>Write <code>Value</code>s from a typed mutation.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="queue-and-timer">queue and timer</h2>
+
+<table>
+  <thead><tr><th>Item</th><th></th></tr></thead>
+  <tbody>
+    <tr><td><code>TypedQueue&lt;P, R = Value&gt;</code></td><td><code>static Q: TypedQueue&lt;P, R&gt; = TypedQueue::new("name")</code>, <code>.turn_ms(ms)</code>: the queue's declaration (contracts from <code>P</code> and <code>R</code>) and its handle — <code>enqueue</code>, <code>claim</code>, <code>renew</code>, <code>complete</code>, <code>finish</code>, <code>fail</code>, <code>kill</code>, <code>release</code>, <code>cancel</code>, <code>get</code>, <code>result</code>, <code>stats</code>, <code>ready</code>. Guests use only the queues their app lists (<code>queue_undeclared</code> otherwise).</td></tr>
+    <tr><td><code>QueueDef</code></td><td>A raw declaration: <code>QueueDef::new(name).payload(schema).result(schema).turn_ms(ms)</code>.</td></tr>
+    <tr><td><code>Queue</code></td><td>Raw operations by queue name: <code>enqueue</code>, <code>claim</code>, <code>claim_admitting</code>, <code>wait</code>, <code>renew</code>, <code>complete</code>, <code>finish</code>, <code>fail</code>, <code>kill</code>, <code>release</code>, <code>cancel</code>, <code>retry</code>, <code>purge</code>; reads <code>get</code>, <code>stats</code>, <code>stats_for</code>, <code>ready</code> take any context.</td></tr>
+    <tr><td><code>EnqueueOptions</code>, <code>ClaimOptions</code>, <code>Job</code>, <code>Claim</code>, <code>Lease</code>, <code>Item</code>, <code>Stats</code></td><td>Options and records.</td></tr>
+    <tr><td><code>Timers</code></td><td><code>after(ctx, id, Duration, &amp;OP, &amp;args)</code> and <code>at(ctx, id, due_ms, &amp;OP, &amp;args)</code> over a mutation's <code>Op</code> and its own argument struct, checked when scheduled; <code>schedule(ctx, id, due_ms, &amp;Method, Value, &amp;ScheduleOptions)</code> raw; <code>cancel</code>, <code>retry(ctx, id, Duration)</code>; reads <code>get</code> and <code>scan</code> take any context. <code>ScheduleOptions { max_attempts }</code>, <code>Timer</code>, <code>TimerState</code>.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="auth-and-access">auth and access</h2>
+
+<table>
+  <thead><tr><th>Item</th><th></th></tr></thead>
+  <tbody>
+    <tr><td><code>auth::Authorization</code></td><td><code>{ authenticate, default, sessions, methods }</code>, a component (at most one per module). <code>default</code> is the access of methods that declare none; <code>methods</code> gives access, by name, to definitions another macro declares (<code>external!</code> operations, interface providers). The manifest refuses a name the app does not define, one named twice, and one whose definition declares its own access, so <code>cargo flower build</code> fails on a typo.</td></tr>
+    <tr><td><code>auth::Authentication</code></td><td><code>Typed(&amp;dyn Authenticator)</code>, <code>Callback(fn)</code>, <code>Gateway</code>, <code>Anonymous</code>.</td></tr>
+    <tr><td><code>auth::Access</code></td><td><code>Public</code>, <code>Authenticated</code>, <code>Check(fn)</code>.</td></tr>
+    <tr><td><code>auth::JwtBearer</code>, <code>BearerKey</code>, <code>claims_principal</code></td><td>Bearer JWT authentication.</td></tr>
+    <tr><td><code>auth::Authenticator</code>, <code>Authenticated</code>, <code>AuthRequest</code></td><td>Writing your own.</td></tr>
+    <tr><td><code>access::Policy</code>, <code>FieldAccess</code>, <code>Rule</code>, <code>Operand</code></td><td>Declarative access policies.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="crypto">crypto</h2>
+
+<table>
+  <thead><tr><th>Item</th><th></th></tr></thead>
+  <tbody>
+    <tr><td><code>Crypto</code>, from <code>ctx.crypto()</code></td><td><code>sha256</code>, <code>random_bytes</code>, <code>set_prng</code>, <code>managed_sign</code>, <code>managed_verify</code>, <code>managed_public_key</code>, <code>managed_version</code>, <code>sign</code>, <code>verify</code>, <code>public_key</code>, <code>key_version</code>, <code>jwt()</code>, <code>nacl()</code>, <code>webauthn()</code>. Every server has a crypto host: only managed keys need the operator's catalog.</td></tr>
+    <tr><td><code>KeyDeclaration</code></td><td><code>KeyDeclaration::new(alias, Algorithm, &amp;[Usage])</code>, a component; <code>.key()</code> is the <code>ManagedKey</code> operations take.</td></tr>
+    <tr><td><code>ManagedKey</code>, <code>ManagedKeyRef</code>, <code>Key</code>, <code>Algorithm</code>, <code>Usage</code></td><td>Keys and their references.</td></tr>
+    <tr><td><code>crypto::jwt</code></td><td><code>sign</code>, <code>verify</code>, <code>encrypt</code>, <code>decrypt</code>; <code>JwtKey</code>, <code>KeyFormat</code>, <code>SignOptions</code>, <code>VerifyOptions</code>, <code>ValidationOptions</code>, <code>EncryptOptions</code>, <code>Verified</code>, <code>ProtectedHeader</code>.</td></tr>
+    <tr><td><code>crypto::webauthn</code></td><td><code>challenge</code>, <code>registration_options</code>, <code>authentication_options</code>, <code>verify_registration</code>, <code>verify_authentication</code>; <code>base64url_encode</code>/<code>decode</code>.</td></tr>
+    <tr><td><code>crypto::nacl</code></td><td>secretbox, box, signing, SHA-512, constant-time comparison.</td></tr>
+    <tr><td><code>hex_encode</code>, <code>hex_decode</code></td><td>Byte helpers.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="schema">schema</h2>
+
+<p><code>schema::v</code> builds schemas for raw descriptors: <code>v::string()</code>, <code>number()</code>, <code>int()</code>, <code>boolean()</code>, <code>null()</code>, <code>json()</code>, <code>array(…)</code>, <code>tuple(…)</code>, <code>object(&amp;[…])</code>, <code>nullable(…)</code>, <code>str_enum(…)</code>, <code>field(name, schema)</code>, <code>optional(name, schema)</code>, with <code>.min</code>, <code>.max</code>, <code>.pattern</code> and <code>.build()</code>. <code>Schema::parse</code> validates with a path; <code>Schema::is</code> tests.</p>
+
+<h2 id="error-codes">error::codes</h2>
+<p>SQL additionally defines <code>SQL_INVALID</code> and <code>SQL_BUDGET</code>; see <a href="errors.html#sql">SQL failures</a>.</p>
+
+<p>Constants for the SDK's own failure codes: <code>TYPE_MISMATCH</code>, <code>MISSING_FIELD</code>, <code>INVALID_VALUE</code>, <code>DEPTH_LIMIT</code>, <code>REDACTED_VALUE</code>, <code>SCHEMA_MISMATCH</code>, <code>INVALID_ARGUMENT</code>, <code>UNKNOWN_METHOD</code>, <code>INVALID_INVOCATION</code>, <code>UNKNOWN_KEY</code>, <code>FORBIDDEN_USAGE</code>, <code>BAD_SIGNATURE</code>, <code>ACCESS_DENIED</code>, <code>UNAUTHENTICATED</code>, <code>FORBIDDEN</code>, <code>MODULE_PRIVATE</code>, <code>MODULE_READ_ONLY</code>, <code>MODULE_CONFLICT</code>, <code>MODULE_CONTRACT_VIOLATION</code>. See <a href="errors.html">Error codes and limits</a>.</p>
+
+<div class="callout">
+<p><span class="callout-title">API docs</span> Every item is documented in the source: run <code>cargo doc -p flower-sdk --open</code> in the Flower repository for the full rustdoc.</p>
+</div>
+<h2 id="explicit-members">Absent and nullable members</h2>
+<p><code>Nullable&lt;T&gt;</code> is a required member whose visible value may be null. <code>Omittable&lt;T&gt;</code> is either <code>Missing</code> or <code>Present(T)</code>; <code>Omittable&lt;Nullable&lt;T&gt;&gt;</code> represents absence, explicit null and a value separately. Encoding omits missing fields, and decoding preserves the distinction. <code>Field&lt;T&gt;</code> continues to represent policy redaction. Legacy method <code>Option</code> parameters retain their omission default; ordinary <code>Option</code> struct fields remain required.</p>
+<p><code>#[interface(name = "tasks.v1", handle = TasksApi, client = TasksClient)]</code> optionally generates a native facade with named query methods and <code>prepare_*</code> mutation methods. Bind it with <code>TasksApi::client(remote)</code>. The facade uses <code>flower_sdk::remote::RemoteModule</code>; the SDK remains independent of HTTP, Tokio and provider implementations. Query builders and preparation futures are chosen by the backend, preserving native result metadata. The macro reports collisions between generated method names at the contract.</p>
+<!-- /content -->
+      <nav class="page-nav" aria-label="Previous and next">
+        <a class="prev" href="cli.html" rel="prev">← cargo flower</a>
+        <a class="next" href="errors.html" rel="next">Error codes and limits →</a>
+      </nav>
+      <footer class="site-footer">
+        <p><a href="https://github.com/ipsomachina/flower">Flower on GitHub</a> · <a href="../../LICENSE">MIT license</a> · <a href="https://ipsomachina.com/privacy">Privacy &amp; legal notice</a></p>
+        <p>© 2026 <a href="https://ipsomachina.com">Ipso Machina</a> · Avenue de Chamonix 3 · 1207 Genève · Switzerland</p>
+      </footer>
+    </main>
+    <nav class="toc" aria-label="On this page">
+      <h2>On this page</h2>
+      <ul>
+        <li class="depth-2"><a href="#crate-setup">Crate setup</a></li>
+        <li class="depth-2"><a href="#crate-root">Crate root</a></li>
+        <li class="depth-2"><a href="#macros">Macros</a></li>
+        <li class="depth-2"><a href="#application">Application assembly</a></li>
+        <li class="depth-2"><a href="#contexts">Contexts</a></li>
+        <li class="depth-2"><a href="#typed">typed</a></li>
+        <li class="depth-2"><a href="#index">index</a></li>
+        <li class="depth-2"><a href="#sql">sql</a></li>
+        <li class="depth-2"><a href="#features">features</a></li>
+        <li class="depth-2"><a href="#queue-and-timer">queue and timer</a></li>
+        <li class="depth-2"><a href="#auth-and-access">auth and access</a></li>
+        <li class="depth-2"><a href="#crypto">crypto</a></li>
+        <li class="depth-2"><a href="#schema">schema</a></li>
+        <li class="depth-2"><a href="#error-codes">error::codes</a></li>
+        <li class="depth-2"><a href="#explicit-members">Absent and nullable members</a></li>
+      </ul>
+    </nav>
+  </div>
+  </div>
+  <script src="../assets/search-index.js"></script>
+  <script src="../assets/docs.js"></script>
+</body>
+</html>

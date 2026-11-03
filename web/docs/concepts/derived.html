@@ -1,0 +1,339 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Derived values and aggregates · Flower docs</title>
+  <meta name="description" content="Reactive computations, materialization, delta-maintained aggregates, triggers and maintenance tasks.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://flower.ipsomachina.com/docs/concepts/derived.html">
+  <meta property="og:title" content="Derived values and aggregates">
+  <meta property="og:description" content="Reactive computations, materialization, delta-maintained aggregates, triggers and maintenance tasks.">
+  <meta property="og:image" content="https://flower.ipsomachina.com/social.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Flower logo on a white background">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" type="image/svg+xml" href="../../favicon.svg">
+  <link rel="stylesheet" href="../assets/docs.css">
+</head>
+<body data-root="../">
+  <a class="skip-link" href="#content">Skip to content</a>
+  <header class="site-header">
+    <button class="menu-button" id="menu-toggle" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="sidebar"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M3 5.5h14M3 10h14M3 14.5h14"/></svg></button>
+    <a class="brand" href="../index.html"><svg viewBox="0 0 80 80" width="32" height="32" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(0 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(60 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(120 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(180 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(240 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(300 40 40)"/></svg><span class="brand-name">FLOWER</span><span class="brand-docs">Documentation</span></a>
+    <div class="header-spacer"></div>
+    <div class="search" role="search">
+      <input id="search-input" type="search" placeholder="Search" autocomplete="off" spellcheck="false" aria-label="Search the documentation" aria-controls="search-results" aria-expanded="false" role="combobox">
+      <div class="search-results" id="search-results" role="listbox" hidden></div>
+    </div>
+    <a class="header-link" href="../../index.html">Home</a>
+    <a class="header-link" href="https://github.com/ipsomachina/flower">GitHub</a>
+  </header>
+  <div class="scrim" id="scrim" hidden></div>
+  <div class="layout">
+  <nav class="sidebar" id="sidebar" aria-label="Documentation">
+    <h2>Get started</h2>
+    <ul>
+      <li><a href="../index.html">Introduction</a></li>
+      <li><a href="../quickstart.html">Quickstart</a></li>
+    </ul>
+    <h2>Concepts</h2>
+    <ul>
+      <li><a href="databases.html">Databases, modules and groups</a></li>
+      <li><a href="collections.html">Collections and indexes</a></li>
+      <li><a href="methods.html">Queries and mutations</a></li>
+      <li><a href="derived.html" aria-current="page">Derived values and aggregates</a></li>
+      <li><a href="consistency.html">Revisions and consistency</a></li>
+      <li><a href="retries.html">Retries and receipts</a></li>
+      <li><a href="watches.html">Watches</a></li>
+      <li><a href="time.html">Time</a></li>
+      <li><a href="queues-timers.html">Queues and timers</a></li>
+      <li><a href="modules.html">Modules and interfaces</a></li>
+      <li><a href="transactions.html">Transactions and partitions</a></li>
+    </ul>
+    <h2>Guides</h2>
+    <ul>
+      <li><a href="../guides/rust-client.html">Calling Flower from Rust</a></li>
+      <li><a href="../guides/sql.html">SQL queries</a></li>
+      <li><a href="../guides/errors-retries.html">Errors and retries in clients</a></li>
+      <li><a href="../guides/auth.html">Authentication and authorization</a></li>
+      <li><a href="../guides/crypto.html">Guest cryptography</a></li>
+      <li><a href="../guides/workers.html">Worker queues</a></li>
+      <li><a href="../guides/deployments.html">Deployments</a></li>
+      <li><a href="../guides/backups.html">Backups and restore</a></li>
+      <li><a href="../guides/operations.html">Operating a cluster</a></li>
+      <li><a href="../guides/testing.html">Testing applications</a></li>
+    </ul>
+    <h2>Reference</h2>
+    <ul>
+      <li><a href="../reference/http.html">HTTP API</a></li>
+      <li><a href="../reference/cli.html">cargo flower</a></li>
+      <li><a href="../reference/sdk.html">flower-sdk</a></li>
+      <li><a href="../reference/errors.html">Error codes and limits</a></li>
+    </ul>
+  </nav>
+  <div class="main">
+    <main class="content" id="content">
+      <p class="breadcrumb">Concepts</p>
+<!-- content -->
+<h1>Derived values and aggregates</h1>
+<p class="lede">A derived value is a computation the engine caches and keeps correct. It records exactly what each evaluation read, and drops the cached result when any of it changes — present rows, absent keys and empty ranges included.</p>
+
+<h2 id="derived-values">Derived values</h2>
+
+<p><code>#[derived]</code> adapts a function taking a <code>DerivedCtx</code>. A derived context can read collections, indexes, other derived values and the clock — nothing else: no writes, no calls to methods, no identity. An instance is identified by the definition name plus its canonical arguments:</p>
+
+<pre><code class="language-rust" data-include="examples/snippets/src/derived.rs#derived">/// How many of a customer's orders have not shipped yet. The engine
+/// records the index range this reads, caches the result per customer
+/// and drops it when an order in that range changes.
+#[derived]
+pub fn unshipped(ctx: &amp;mut DerivedCtx&lt;'_, '_&gt;, customer: String) -&gt; Result&lt;u64&gt; {
+    let page = Orders::BY_CUSTOMER.prefix((customer,)).page(ctx, 1_000)?;
+    Ok(page.rows.iter().filter(|row| !row.value.shipped).count() as u64)
+}
+
+/// Read it from a query (or another derived value) of the same module,
+/// `""`, with the argument struct `#[derived]` generated.
+#[query(http)]
+pub fn customer_summary(ctx: &amp;mut QueryCtx&lt;'_, '_&gt;, customer: String) -&gt; Result&lt;u64&gt; {
+    let args = UnshippedArgs { customer }.encode()?;
+    u64::decode(ctx.get_derived("", UNSHIPPED.name, &amp;args)?)
+}</code></pre>
+
+<p>Like <code>#[query]</code>, the attribute keeps the function and adds an argument struct (<code>UnshippedArgs</code>) and a static named after it in upper case (<code>UNSHIPPED</code>, a <code>Derived</code>), which you list among the app's components. Its options are <code>name</code>, <code>export</code> (other modules may read it) and <code>materialize</code> (below); a derived value is never called over HTTP directly — queries read it.</p>
+
+<p>Read it from any context with <code>ctx.get_derived(module, name, &amp;args)</code>, where <code>""</code> is your own module. Reading a derived value makes it a dependency of the reader, so a query reading <code>unshipped</code> is itself invalidated when <code>unshipped</code> changes.</p>
+
+<p>How the engine keeps a derived value correct:</p>
+
+<ul>
+  <li><strong>Dependencies are observed, not declared.</strong> Every key read (found or absent), every scan and every index range read becomes an edge. A write that touches any of them drops the cached outcome; a write that touches none of them leaves it alone.</li>
+  <li><strong>Outcomes include errors.</strong> A failed evaluation is cached too, with the old and new dependencies, so the change that fixes it re-evaluates it.</li>
+  <li><strong>Mutations see fresh values.</strong> Inside a mutation, a derived value read after the mutation's own writes reflects them.</li>
+  <li><strong>New code invalidates everything it computed.</strong> Every activation of a module starts a new <em>code era</em>: values computed by earlier code are re-evaluated on their next read.</li>
+  <li>Evaluation nests at most 16 deep; a dependency cycle fails as a guest failure.</li>
+</ul>
+
+<h2 id="materialization">Materialization</h2>
+
+<p>By default an instance is computed on demand and kept in cache while there is room (<code>Materialize::Never</code>). A <strong>materialized</strong> instance is a pinned root: when its dependencies change it is re-evaluated eagerly, at commit, so reads never pay for it. Set the policy in the attribute or on the descriptor:</p>
+
+<ul>
+  <li><code>#[derived(materialize = always)]</code>, or <code>.materialize(Materialize::Always)</code> on a <code>Derived</code> static, pins every evaluated instance.</li>
+  <li><code>#[derived(materialize = each(Orders))]</code>, or <code>.materialize(Materialize::Each(Orders::raw()))</code>, keeps one root per row of a collection of the same module, at arguments <code>{"key": &lt;row key&gt;}</code>: inserting a row pins its root, deleting it unpins it.</li>
+  <li><code>ctx.materialize(module, name, &amp;args)</code> and <code>ctx.unmaterialize(…)</code> in a mutation pin and unpin individual instances by hand.</li>
+</ul>
+
+<h2 id="aggregates">Aggregates</h2>
+
+<p>An aggregate keeps one accumulator per group of an index, and maintains it by <strong>deltas</strong>: a write folds the changed row's old image out and its new image in, without reading the group's other rows again. Implement <code>index::TypedAggregate</code>:</p>
+
+<pre><code class="language-rust" data-include="examples/snippets/src/derived.rs#aggregate">#[derive(FlowerType, Clone, Debug, PartialEq)]
+pub struct Totals {
+    pub orders: u64,
+    pub cents: u64,
+}
+
+/// Order count and value per customer, kept by deltas: a write folds
+/// the changed order's old image out and its new one in, without
+/// scanning the customer's other orders.
+pub struct CustomerTotals;
+
+impl TypedAggregate for CustomerTotals {
+    type Source = Orders;
+    type Fields = (String,);
+    type Group = (String,);
+    type Accumulator = Totals;
+    const NAME: &amp;'static str = "customer_totals";
+    const INDEX: &amp;'static str = "by_customer";
+    /// Keep cached groups across deployments that keep this version.
+    const VERSION: Option&lt;&amp;'static str&gt; = Some("1");
+
+    fn initial(_customer: &amp;(String,)) -&gt; Result&lt;Totals&gt; {
+        Ok(Totals {
+            orders: 0,
+            cents: 0,
+        })
+    }
+
+    fn add(totals: Totals, _key: &amp;String, order: &amp;Order, _: &amp;(String,)) -&gt; Result&lt;Totals&gt; {
+        Ok(Totals {
+            orders: totals.orders + 1,
+            cents: totals.cents + order.cents,
+        })
+    }
+
+    fn remove(
+        totals: Totals,
+        _key: &amp;String,
+        order: &amp;Order,
+        _: &amp;(String,),
+    ) -&gt; Result&lt;Option&lt;Totals&gt;&gt; {
+        Ok(Some(Totals {
+            orders: totals.orders - 1,
+            cents: totals.cents - order.cents,
+        }))
+    }
+}
+
+/// Every group stays maintained, so no read ever has to build one.
+pub static CUSTOMER_TOTALS: Derived = CustomerTotals::DERIVED.materialize(Materialize::Always);
+
+#[query(http)]
+pub fn totals(ctx: &amp;mut QueryCtx&lt;'_, '_&gt;, customer: String) -&gt; Result&lt;Totals&gt; {
+    CustomerTotals::get(ctx, &amp;(customer,))
+}</code></pre>
+
+<p>On the node from the quickstart, with two orders for <code>ada</code> and then one of them reassigned to <code>bob</code>:</p>
+
+<pre><code class="language-json">{"ok":true,"value":{"cents":2050,"orders":2}}    // totals for ada
+{"ok":true,"value":{"cents":800,"orders":1}}     // ada, after the move
+{"ok":true,"value":{"cents":1250,"orders":1}}    // bob</code></pre>
+
+<ul>
+  <li><code>Group</code> is a <em>full</em> prefix of the index fields: the aggregate groups by every field of the index you name. Declare an index with exactly the fields you want to group by.</li>
+  <li>The first read of a group builds it by folding its rows through <code>add</code> in index order, a page (<code>PAGE</code>, 256 rows) at a time. After that, writes update it incrementally, in the writing transaction.</li>
+  <li><code>remove</code> must be the exact inverse of <code>add</code>, and both must be order-independent: changes arrive in key order, not write order. Use integers (cents, not floating-point euros). Returning <code>Ok(None)</code> from <code>remove</code> — its default, for things like a minimum that cannot take a row out — makes the engine rebuild that group from its rows.</li>
+  <li>The reducer runs without a context: <code>add</code> and <code>remove</code> cannot read anything else (<code>aggregate_context_forbidden</code>).</li>
+  <li><code>VERSION</code> lets cached groups survive a redeployment that keeps the same version, collection, index and fields. Without one, new code rebuilds every group it reaches.</li>
+  <li>A collection declared without types can still be a source, through a <code>TypedCollection</code> marker whose key and value are <code>Value</code>.</li>
+</ul>
+
+<p>Read a group with <code>CustomerTotals::get(ctx, &amp;(customer,))</code>, as <code>totals</code> does: it returns the decoded accumulator. Underneath, an aggregate is a derived value named <code>NAME</code> whose arguments are <code>{"group": [&lt;field values&gt;]}</code>; list its <code>DERIVED</code> descriptor (here with a materialization policy) among the app's components.</p>
+
+<h2 id="triggers-and-retention">Triggers and retention hooks</h2>
+
+<p>A <strong>trigger</strong> runs inside the mutation that changed its source collection, once per net change of a row, with the row's key and its image before and after:</p>
+
+<pre><code class="language-rust" data-include="examples/snippets/src/derived.rs#trigger">/// Records a shipment whenever an order flips to shipped, inside the
+/// same mutation as the write that flipped it.
+pub struct RecordShipments;
+
+impl TypedTrigger for RecordShipments {
+    type Source = Orders;
+    const NAME: &amp;'static str = "record_shipments";
+
+    fn run(
+        ctx: &amp;mut MutationCtx&lt;'_, '_&gt;,
+        key: String,
+        before: Option&lt;Order&gt;,
+        after: Option&lt;Order&gt;,
+    ) -&gt; Result&lt;()&gt; {
+        let was = before.is_some_and(|order| order.shipped);
+        let is = after.is_some_and(|order| order.shipped);
+        if is &amp;&amp; !was {
+            let at = ctx.clock()?;
+            let shipment = Shipment {
+                order: key.clone(),
+                at,
+            };
+            Shipments::set(ctx, &amp;key, &amp;shipment)?;
+        }
+        Ok(())
+    }
+}
+
+pub static RECORD_SHIPMENTS: Trigger = RecordShipments::TRIGGER;</code></pre>
+
+<ul>
+  <li>Triggers fire when the mutation settles — at an explicit <code>ctx.settle()</code> or at commit — exactly once per <code>(collection, key, after-image)</code>. The before-image is the committed row, unaffected by the mutation's own staged writes.</li>
+  <li>Each firing runs under its own savepoint with the module's rights. A failing trigger rolls back its own writes and fails the mutation.</li>
+  <li>Triggers and reference cascades that trigger each other abort after 16 rounds with <code>cascade_too_deep</code>.</li>
+  <li>The engine fires a trigger as a mutation of the trigger's name, which is why <code>cargo flower build</code> counts it among the mutations.</li>
+</ul>
+
+<p>A <strong>retention hook</strong> (<code>features::TypedRetention</code>, whose <code>RETENTION</code> descriptor you list among the app's components) is different: it sees every successful <em>deletion</em> of a row, with the deleted value and time, so it can archive or keep data that would otherwise disappear. A delete followed by a re-insert is no net change for a trigger, but it is still a deletion for retention. <code>delete_permanently</code> skips retention.</p>
+
+<h2 id="maintenance-tasks">Maintenance tasks</h2>
+
+<p>A maintenance task is periodic work driven by data. <code>due</code> says, as a query, when the task next has work; while that moment is past, the leader runs <code>run</code>, one bounded unit at a time, as a replicated mutation:</p>
+
+<pre><code class="language-rust" data-include="examples/snippets/src/derived.rs#task">/// Deletes shipment records once they are a day old, a page per run.
+pub struct ForgetShipments;
+
+const DAY_MS: f64 = 86_400_000.0;
+
+impl TypedTask for ForgetShipments {
+    const NAME: &amp;'static str = "forget_shipments";
+
+    /// The earliest moment there is work: a day after the oldest
+    /// shipment on this page, or never.
+    fn due(ctx: &amp;mut QueryCtx&lt;'_, '_&gt;) -&gt; Result&lt;Option&lt;f64&gt;&gt; {
+        let page = Shipments::page(ctx, 100, None)?;
+        Ok(page
+            .rows
+            .iter()
+            .map(|row| row.value.at + DAY_MS)
+            .reduce(f64::min))
+    }
+
+    /// One bounded unit of work; the task stays due while `due` is past.
+    fn run(ctx: &amp;mut MutationCtx&lt;'_, '_&gt;) -&gt; Result&lt;Value&gt; {
+        let now = ctx.clock()?;
+        let page = Shipments::page(ctx, 100, None)?;
+        let mut forgotten = 0.0;
+        for row in page.rows {
+            if row.value.at + DAY_MS &lt;= now {
+                Shipments::delete(ctx, &amp;row.key)?;
+                forgotten += 1.0;
+            }
+        }
+        Ok(Value::Number(forgotten))
+    }
+}
+
+pub static FORGET_SHIPMENTS: Task = ForgetShipments::TASK;</code></pre>
+
+<ul>
+  <li><code>due</code> must depend only on data and time. Before each run the engine evaluates it again in the run's own transaction, so a unit of work never runs twice.</li>
+  <li>The leader checks tasks after writes, at the earliest declared due time, on leadership changes and at least every <code>--timer-sweep-ms</code> (one second by default). Followers never run tasks; a new leader carries on from replicated state.</li>
+  <li>A failed run rolls back and the task backs off — one second, doubling up to a minute — unless it sets <code>HANDLES_FAILURES</code> and implements <code>on_error</code>. Operators see each task's failures in <code>cargo flower modules</code>.</li>
+  <li>For work at a specific time, or triggered by a specific event, prefer a <a href="queues-timers.html#timers">timer</a>.</li>
+</ul>
+
+<h2 id="registering">Registering them</h2>
+
+<p>Derived values, aggregates, triggers and tasks are components like collections and methods. A module is exactly what its <code>App</code> lists:</p>
+
+<pre><code class="language-rust" data-include="examples/snippets/src/derived.rs#app">/// Derived values, aggregates, triggers and tasks are components like
+/// the rest.
+pub static APP: App = App::new(&amp;[
+    &amp;Orders,
+    &amp;Shipments,
+    &amp;PUT_ORDER,
+    &amp;UNSHIPPED,
+    &amp;CUSTOMER_TOTALS,
+    &amp;RECORD_SHIPMENTS,
+    &amp;FORGET_SHIPMENTS,
+    &amp;CUSTOMER_SUMMARY,
+    &amp;TOTALS,
+]);</code></pre>
+<!-- /content -->
+      <nav class="page-nav" aria-label="Previous and next">
+        <a class="prev" href="methods.html" rel="prev">← Queries and mutations</a>
+        <a class="next" href="consistency.html" rel="next">Revisions and consistency →</a>
+      </nav>
+      <footer class="site-footer">
+        <p><a href="https://github.com/ipsomachina/flower">Flower on GitHub</a> · <a href="../../LICENSE">MIT license</a> · <a href="https://ipsomachina.com/privacy">Privacy &amp; legal notice</a></p>
+        <p>© 2026 <a href="https://ipsomachina.com">Ipso Machina</a> · Avenue de Chamonix 3 · 1207 Genève · Switzerland</p>
+      </footer>
+    </main>
+    <nav class="toc" aria-label="On this page">
+      <h2>On this page</h2>
+      <ul>
+        <li class="depth-2"><a href="#derived-values">Derived values</a></li>
+        <li class="depth-2"><a href="#materialization">Materialization</a></li>
+        <li class="depth-2"><a href="#aggregates">Aggregates</a></li>
+        <li class="depth-2"><a href="#triggers-and-retention">Triggers and retention hooks</a></li>
+        <li class="depth-2"><a href="#maintenance-tasks">Maintenance tasks</a></li>
+        <li class="depth-2"><a href="#registering">Registering them</a></li>
+      </ul>
+    </nav>
+  </div>
+  </div>
+  <script src="../assets/search-index.js"></script>
+  <script src="../assets/docs.js"></script>
+</body>
+</html>

@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Modules and interfaces · Flower docs</title>
+  <meta name="description" content="Exports, imports, interface crates, slots and bindings.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://flower.ipsomachina.com/docs/concepts/modules.html">
+  <meta property="og:title" content="Modules and interfaces">
+  <meta property="og:description" content="Exports, imports, interface crates, slots and bindings.">
+  <meta property="og:image" content="https://flower.ipsomachina.com/social.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Flower logo on a white background">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" type="image/svg+xml" href="../../favicon.svg">
+  <link rel="stylesheet" href="../assets/docs.css">
+</head>
+<body data-root="../">
+  <a class="skip-link" href="#content">Skip to content</a>
+  <header class="site-header">
+    <button class="menu-button" id="menu-toggle" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="sidebar"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M3 5.5h14M3 10h14M3 14.5h14"/></svg></button>
+    <a class="brand" href="../index.html"><svg viewBox="0 0 80 80" width="32" height="32" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(0 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(60 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(120 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(180 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(240 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(300 40 40)"/></svg><span class="brand-name">FLOWER</span><span class="brand-docs">Documentation</span></a>
+    <div class="header-spacer"></div>
+    <div class="search" role="search">
+      <input id="search-input" type="search" placeholder="Search" autocomplete="off" spellcheck="false" aria-label="Search the documentation" aria-controls="search-results" aria-expanded="false" role="combobox">
+      <div class="search-results" id="search-results" role="listbox" hidden></div>
+    </div>
+    <a class="header-link" href="../../index.html">Home</a>
+    <a class="header-link" href="https://github.com/ipsomachina/flower">GitHub</a>
+  </header>
+  <div class="scrim" id="scrim" hidden></div>
+  <div class="layout">
+  <nav class="sidebar" id="sidebar" aria-label="Documentation">
+    <h2>Get started</h2>
+    <ul>
+      <li><a href="../index.html">Introduction</a></li>
+      <li><a href="../quickstart.html">Quickstart</a></li>
+    </ul>
+    <h2>Concepts</h2>
+    <ul>
+      <li><a href="databases.html">Databases, modules and groups</a></li>
+      <li><a href="collections.html">Collections and indexes</a></li>
+      <li><a href="methods.html">Queries and mutations</a></li>
+      <li><a href="derived.html">Derived values and aggregates</a></li>
+      <li><a href="consistency.html">Revisions and consistency</a></li>
+      <li><a href="retries.html">Retries and receipts</a></li>
+      <li><a href="watches.html">Watches</a></li>
+      <li><a href="time.html">Time</a></li>
+      <li><a href="queues-timers.html">Queues and timers</a></li>
+      <li><a href="modules.html" aria-current="page">Modules and interfaces</a></li>
+      <li><a href="transactions.html">Transactions and partitions</a></li>
+    </ul>
+    <h2>Guides</h2>
+    <ul>
+      <li><a href="../guides/rust-client.html">Calling Flower from Rust</a></li>
+      <li><a href="../guides/sql.html">SQL queries</a></li>
+      <li><a href="../guides/errors-retries.html">Errors and retries in clients</a></li>
+      <li><a href="../guides/auth.html">Authentication and authorization</a></li>
+      <li><a href="../guides/crypto.html">Guest cryptography</a></li>
+      <li><a href="../guides/workers.html">Worker queues</a></li>
+      <li><a href="../guides/deployments.html">Deployments</a></li>
+      <li><a href="../guides/backups.html">Backups and restore</a></li>
+      <li><a href="../guides/operations.html">Operating a cluster</a></li>
+      <li><a href="../guides/testing.html">Testing applications</a></li>
+    </ul>
+    <h2>Reference</h2>
+    <ul>
+      <li><a href="../reference/http.html">HTTP API</a></li>
+      <li><a href="../reference/cli.html">cargo flower</a></li>
+      <li><a href="../reference/sdk.html">flower-sdk</a></li>
+      <li><a href="../reference/errors.html">Error codes and limits</a></li>
+    </ul>
+  </nav>
+  <div class="main">
+    <main class="content" id="content">
+      <p class="breadcrumb">Concepts</p>
+<!-- content -->
+<h1>Modules and interfaces</h1>
+<p class="lede">Several modules can share a database and commit together, while each keeps its data private. A module exposes exactly what it exports; other modules reach it through contracts that deployment checks for compatibility.</p>
+
+<h2 id="private-by-default">Private by default</h2>
+
+<p>A module's collections, derived values and methods are invisible to other modules unless their declarations export them. Reading or calling something not exported fails with <code>MODULE_PRIVATE</code>. Exported collections are <strong>read-only</strong> to other modules (<code>MODULE_READ_ONLY</code>): changes always go through the owner's own mutations, so its checks, triggers and references always run.</p>
+
+<h3 id="exports">Exports</h3>
+
+<p>An export is a flag on the declaration it concerns: <code>export</code> on <code>#[collection]</code>, <code>#[query]</code>, <code>#[mutation]</code> and <code>#[derived]</code>, or <code>callers("shop", ...)</code> on a method to admit only the modules it names:</p>
+
+<pre><code class="language-rust" data-include="examples/snippets/src/modules.rs#exports">/// Without an interface, exports are flags on the declarations: other
+/// modules may read this collection...
+#[collection(name = "prices", key = String, value = u64, export)]
+pub struct Prices;
+
+/// ...and only `shop` and `reports` may call this query (`export`
+/// alone would admit every module).
+#[query(callers("shop", "reports"))]
+pub fn price(ctx: &amp;mut QueryCtx&lt;'_, '_&gt;, sku: String) -&gt; Result&lt;u64&gt; {
+    Ok(Prices::get(ctx, &amp;sku)?.unwrap_or(0))
+}</code></pre>
+
+<p>A method with a <code>callers</code> allowlist refuses every other module with <code>MODULE_PRIVATE</code>. Allowlists name actual module names, never slots. Raw descriptors say the same with <code>.export()</code> and <code>.export_to(&amp;["shop"])</code>; an empty allowlist admits no module. Exports change nothing inside the module itself, and HTTP exposure is separate: <code>http</code> governs clients, <code>export</code> governs other modules.</p>
+
+<p>Other modules read exported collections through typed handles pointed at the provider: <code>Items::SOURCE.in_module("warehouse")</code> or an index handle's <code>in_module</code>, and call exported methods with <code>ctx.call</code>, <code>try_call</code>, <code>call_mutation</code> and <code>try_mutation</code> (see <a href="methods.html#calling-other-modules">Calling other modules</a>).</p>
+
+<h2 id="interface-crates">Interface crates</h2>
+
+<p>Modules are separate Wasm artifacts that share no code at run time — only contracts. The tidy way to share a contract is an <strong>interface crate</strong>: a plain library both modules depend on, holding the types and a trait annotated with <code>#[interface]</code>:</p>
+
+<pre><code class="language-rust" data-include="examples/snippets/src/modules.rs#interface">#[derive(FlowerType, Clone, Debug, PartialEq)]
+pub struct Item {
+    pub name: String,
+    pub stock: u64,
+}
+
+#[derive(FlowerError, Clone, Debug, PartialEq)]
+pub enum StockError {
+    #[flower(code = "UNKNOWN_ITEM")]
+    Unknown,
+    #[flower(code = "OUT_OF_STOCK")]
+    OutOfStock(u64),
+    #[flower(other)]
+    Host(Failure),
+}
+
+/// The contract, versioned in its name: an incompatible change gets a
+/// new interface rather than breaking deployed consumers.
+#[interface(name = "inventory.v1", handle = InventoryApi)]
+pub trait Inventory {
+    #[query]
+    fn item(ctx: &amp;mut QueryCtx&lt;'_, '_&gt;, sku: String) -&gt; flower_sdk::Result&lt;Option&lt;Item&gt;&gt;;
+
+    #[mutation]
+    fn reserve(
+        ctx: &amp;mut MutationCtx&lt;'_, '_&gt;,
+        sku: String,
+        quantity: u64,
+    ) -&gt; core::result::Result&lt;u64, StockError&gt;;
+}</code></pre>
+
+<p>From that one trait the macro generates both sides:</p>
+
+<ul>
+  <li><strong>For the provider</strong>, <code>InventoryProvider&lt;P&gt;</code>: implement the trait on any type <code>P</code>, then list <code>InventoryProvider::&lt;P&gt;::COMPONENT</code> among the app's components. It brings the interface's methods, exported to every module, and nothing else. They stay off HTTP unless you list <code>COMPONENT.http()</code> instead; to give them access rules, name them in the authorization component's <a href="../guides/auth.html"><code>methods</code></a> table.</li>
+  <li><strong>For consumers</strong>, the handle <code>InventoryApi</code>: one static, <code>InventoryApi::import("$inventory")</code>, is both the import component the app lists and the typed call handle, with methods (<code>item</code>, <code>reserve</code>) and savepoint variants (<code>try_item</code>, <code>try_reserve</code>) that decode the declared error type.</li>
+</ul>
+
+<p>The provider:</p>
+
+<pre><code class="language-rust" data-include="examples/snippets/src/modules.rs#provider">#[collection(name = "items", key = String, value = Item)]
+pub struct Items;
+
+pub struct Warehouse;
+
+impl Inventory for Warehouse {
+    fn item(ctx: &amp;mut QueryCtx&lt;'_, '_&gt;, sku: String) -&gt; flower_sdk::Result&lt;Option&lt;Item&gt;&gt; {
+        Items::get(ctx, &amp;sku)
+    }
+
+    fn reserve(
+        ctx: &amp;mut MutationCtx&lt;'_, '_&gt;,
+        sku: String,
+        quantity: u64,
+    ) -&gt; core::result::Result&lt;u64, StockError&gt; {
+        let mut item = Items::get(ctx, &amp;sku)?.ok_or(StockError::Unknown)?;
+        if item.stock &lt; quantity {
+            return Err(StockError::OutOfStock(item.stock));
+        }
+        item.stock -= quantity;
+        Items::set(ctx, &amp;sku, &amp;item)?;
+        Ok(item.stock)
+    }
+}
+
+/// The provider component brings the interface's methods, exported to
+/// every module. Add `.http()` to let callers reach them over HTTP too.
+pub static PROVIDER_APP: App = App::new(&amp;[&amp;Items, &amp;InventoryProvider::&lt;Warehouse&gt;::COMPONENT]);</code></pre>
+
+<p>A consumer:</p>
+
+<pre><code class="language-rust" data-include="examples/snippets/src/modules.rs#consumer">/// Wherever this deployment's `inventory` binding points: the typed
+/// call handle and the import declaring the contract it must meet.
+static INVENTORY: InventoryApi = InventoryApi::import("$inventory");
+
+#[mutation(http)]
+pub fn checkout(ctx: &amp;mut MutationCtx&lt;'_, '_&gt;, sku: String, quantity: u64) -&gt; Result&lt;String&gt; {
+    match INVENTORY.try_reserve(ctx, sku, quantity) {
+        Ok(CallOutcome::Success(left)) =&gt; Ok(alloc::format!("reserved; {left} left")),
+        Ok(CallOutcome::Failure(StockError::OutOfStock(left))) =&gt; {
+            Ok(alloc::format!("only {left} left"))
+        }
+        Ok(CallOutcome::Failure(other)) =&gt; {
+            Err(fail("CHECKOUT_FAILED", alloc::format!("{other:?}")))
+        }
+        Err(CallError::Host(failure)) =&gt; Err(failure),
+    }
+}
+
+pub static CONSUMER_APP: App = App::new(&amp;[&amp;INVENTORY, &amp;CHECKOUT]);</code></pre>
+
+<p>The repository's <code>examples/typed-modules-contract</code>, <code>-provider</code> and <code>-consumer</code> crates are a complete, deployable version of this pattern.</p>
+
+<h2 id="slots-and-bindings">Slots and bindings</h2>
+
+<p>The consumer above imports <code>"$inventory"</code>, a <strong>slot</strong>, rather than a concrete module name. Each deployment binds the slot to a module, so the same binary can run against different providers in different databases:</p>
+
+<pre><code class="language-bash">cargo flower deploy --db store --module warehouse --wasm provider.wasm --admin-token secret
+cargo flower deploy --db store --module shop --wasm consumer.wasm --admin-token secret \
+  --bind inventory=warehouse</code></pre>
+
+<p>Deploying without the binding is refused before anything is sent:</p>
+
+<pre><code class="language-console">cargo-flower: invalid_module (preflight; nothing was sent): slot `$inventory` is not bound: deploy with --bind inventory=&lt;module&gt;</code></pre>
+
+<p>Bindings become part of the deployed manifest and of its content identity. Every imported slot must be bound and every binding used; module names never start with <code>$</code>. To point a consumer at another provider, deploy the same binary again with another binding. <code>--bindings FILE</code> takes the same map as a JSON object.</p>
+
+<h2 id="compatibility">Compatibility checks</h2>
+
+<p>When you deploy a module, the server checks its imports against the providers deployed in the database, and checks every deployed importer against what the module is about to export. A provider must accept every argument the importer may send, and may only return results and declared errors the importer accepts; exported collections must agree on keys and fit the importer's row type. A change that would break a link is refused with <code>409 MODULE_CONFLICT</code>, naming what would break. You can run the same check offline before deploying:</p>
+
+<pre><code class="language-bash">cargo flower plan --wasm consumer.wasm --module shop \
+  --with warehouse=provider.wasm --bind inventory=warehouse</code></pre>
+
+<p>At run time the host still holds every answer to the provider's declared contract: a result or error outside it fails with <code>MODULE_CONTRACT_VIOLATION</code>, as the callee's failure.</p>
+
+<div class="callout">
+<p><span class="callout-title">Versioning</span> Compatibility is structural, so a provider can widen what it accepts and narrow what it returns without breaking anyone. For a breaking change, publish a new interface (<code>inventory.v2</code>), serve both from the provider for a while, and move consumers over.</p>
+</div>
+
+<h2 id="removing-modules">Removing a module</h2>
+
+<p><code>cargo flower modules --db D remove --module M</code> removes a module's code, HTTP names, hooks and derived values through the log. Its records stay, unreachable, so deploying it again brings them back; add <code>--purge</code> to delete its data too, in the background, page by page. A module another module imports from cannot be removed (<code>MODULE_CONFLICT</code>). See <a href="../guides/deployments.html#removing-a-module">Deployments</a>.</p>
+<!-- /content -->
+      <nav class="page-nav" aria-label="Previous and next">
+        <a class="prev" href="queues-timers.html" rel="prev">← Queues and timers</a>
+        <a class="next" href="transactions.html" rel="next">Transactions and partitions →</a>
+      </nav>
+      <footer class="site-footer">
+        <p><a href="https://github.com/ipsomachina/flower">Flower on GitHub</a> · <a href="../../LICENSE">MIT license</a> · <a href="https://ipsomachina.com/privacy">Privacy &amp; legal notice</a></p>
+        <p>© 2026 <a href="https://ipsomachina.com">Ipso Machina</a> · Avenue de Chamonix 3 · 1207 Genève · Switzerland</p>
+      </footer>
+    </main>
+    <nav class="toc" aria-label="On this page">
+      <h2>On this page</h2>
+      <ul>
+        <li class="depth-2"><a href="#private-by-default">Private by default</a></li>
+        <li class="depth-3"><a href="#exports">Exports</a></li>
+        <li class="depth-2"><a href="#interface-crates">Interface crates</a></li>
+        <li class="depth-2"><a href="#slots-and-bindings">Slots and bindings</a></li>
+        <li class="depth-2"><a href="#compatibility">Compatibility checks</a></li>
+        <li class="depth-2"><a href="#removing-modules">Removing a module</a></li>
+      </ul>
+    </nav>
+  </div>
+  </div>
+  <script src="../assets/search-index.js"></script>
+  <script src="../assets/docs.js"></script>
+</body>
+</html>

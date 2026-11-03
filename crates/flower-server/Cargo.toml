@@ -1,0 +1,74 @@
+[package]
+name = "flower-server"
+version = "0.0.20261105"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Flower HTTP API: calls, sync, status and admin over a cluster node"
+
+[dependencies]
+flower-protocol = { version = "0.0.20261105", path = "../flower-protocol" }
+flower-backup = { version = "0.0.20261105", path = "../flower-backup" }
+flower-cluster = { version = "0.0.20261105", path = "../flower-cluster" }
+flower-crypto = { version = "0.0.20261105", path = "../flower-crypto" }
+flower-engine = { version = "0.0.20261105", path = "../flower-engine" }
+flower-sdk = { version = "0.0.20261105", path = "../flower-sdk" }
+axum = "0.8"
+openraft = { package = "flower-openraft", version = "=0.9.25-flower.1" }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "sync", "time"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
+futures-util = "0.3"
+tokio-stream = "0.1"
+# Running forwarded requests through the API's own router.
+tower = { version = "0.5", features = ["util"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+# Request bodies read frame by frame under an admission lease.
+http-body-util = "0.1"
+# The API listener: HTTP/1.1 and HTTP/2 on one port, TLS as the peer
+# transport (rustls with AWS-LC), and sockets inherited from a
+# supervisor.
+hyper-util = { version = "0.1", features = ["server-auto", "server-graceful", "service", "tokio", "http1", "http2"] }
+tokio-rustls = { version = "0.26.5", default-features = false, features = ["aws-lc-rs", "tls12"] }
+zeroize = "1"
+socket2 = { version = "0.6", features = ["all"] }
+# OpenTelemetry over OTLP/HTTP, as v1: off unless FLOWER_OTEL_ENABLED.
+# Bound instruments: the cluster's bind their attributes once, so a
+# recording builds no attribute set; without the SDK's half of the
+# feature their measurements would be dropped.
+opentelemetry = { version = "0.33", default-features = false, features = ["trace", "metrics", "experimental_metrics_bound_instruments"] }
+opentelemetry_sdk = { version = "0.33", default-features = false, features = ["trace", "metrics", "experimental_metrics_bound_instruments"] }
+opentelemetry-otlp = { version = "0.33", default-features = false, features = ["http-proto", "http-json", "reqwest-blocking-client", "reqwest-rustls", "trace", "metrics"] }
+tracing-opentelemetry = { version = "0.34", default-features = false }
+
+[dev-dependencies]
+tempfile = "3"
+# `io-util`: raw HTTP clients that stall mid-body; `signal`: the
+# dashboard demo stops on Ctrl-C.
+tokio = { version = "1", features = ["io-util", "signal"] }
+opentelemetry-otlp = { version = "0.33", default-features = false, features = ["http-json", "trace", "metrics"] }
+opentelemetry_sdk = { version = "0.33", default-features = false, features = ["trace"] }
+# Raw HTTP/1.1 and HTTP/2 clients over TCP and TLS, for listener tests.
+hyper = { version = "1", features = ["client", "http1", "http2"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+http-body-util = "0.1"
+tokio-rustls = { version = "0.26.5", default-features = false, features = ["aws-lc-rs", "tls12"] }
+flower-backup = { path = "../flower-backup" }
+flower-cluster = { path = "../flower-cluster" }
+flower-engine = { path = "../flower-engine" }
+flower-sdk = { path = "../flower-sdk" }
+openraft = { package = "flower-openraft", version = "=0.9.25-flower.1" }
+# Storage backends that fail on demand, for storage-failure tests.
+redb = { package = "flower-redb", version = "=4.4.0-flower.1" }
+reqwest = { version = "0.12", features = ["json"] }
+serde_json = "1"
+# A backup store whose uploads wait on the test.
+object_store = "0.14"
+async-trait = "0.1"
+
+[lints]
+workspace = true

@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Transactions and partitions · Flower docs</title>
+  <meta name="description" content="Atomic work across logical databases, named partitions and groups.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://flower.ipsomachina.com/docs/concepts/transactions.html">
+  <meta property="og:title" content="Transactions and partitions">
+  <meta property="og:description" content="Atomic work across logical databases, named partitions and groups.">
+  <meta property="og:image" content="https://flower.ipsomachina.com/social.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Flower logo on a white background">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" type="image/svg+xml" href="../../favicon.svg">
+  <link rel="stylesheet" href="../assets/docs.css">
+</head>
+<body data-root="../">
+  <a class="skip-link" href="#content">Skip to content</a>
+  <header class="site-header">
+    <button class="menu-button" id="menu-toggle" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="sidebar"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M3 5.5h14M3 10h14M3 14.5h14"/></svg></button>
+    <a class="brand" href="../index.html"><svg viewBox="0 0 80 80" width="32" height="32" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(0 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(60 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(120 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(180 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(240 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(300 40 40)"/></svg><span class="brand-name">FLOWER</span><span class="brand-docs">Documentation</span></a>
+    <div class="header-spacer"></div>
+    <div class="search" role="search">
+      <input id="search-input" type="search" placeholder="Search" autocomplete="off" spellcheck="false" aria-label="Search the documentation" aria-controls="search-results" aria-expanded="false" role="combobox">
+      <div class="search-results" id="search-results" role="listbox" hidden></div>
+    </div>
+    <a class="header-link" href="../../index.html">Home</a>
+    <a class="header-link" href="https://github.com/ipsomachina/flower">GitHub</a>
+  </header>
+  <div class="scrim" id="scrim" hidden></div>
+  <div class="layout">
+  <nav class="sidebar" id="sidebar" aria-label="Documentation">
+    <h2>Get started</h2>
+    <ul>
+      <li><a href="../index.html">Introduction</a></li>
+      <li><a href="../quickstart.html">Quickstart</a></li>
+    </ul>
+    <h2>Concepts</h2>
+    <ul>
+      <li><a href="databases.html">Databases, modules and groups</a></li>
+      <li><a href="collections.html">Collections and indexes</a></li>
+      <li><a href="methods.html">Queries and mutations</a></li>
+      <li><a href="derived.html">Derived values and aggregates</a></li>
+      <li><a href="consistency.html">Revisions and consistency</a></li>
+      <li><a href="retries.html">Retries and receipts</a></li>
+      <li><a href="watches.html">Watches</a></li>
+      <li><a href="time.html">Time</a></li>
+      <li><a href="queues-timers.html">Queues and timers</a></li>
+      <li><a href="modules.html">Modules and interfaces</a></li>
+      <li><a href="transactions.html" aria-current="page">Transactions and partitions</a></li>
+    </ul>
+    <h2>Guides</h2>
+    <ul>
+      <li><a href="../guides/rust-client.html">Calling Flower from Rust</a></li>
+      <li><a href="../guides/sql.html">SQL queries</a></li>
+      <li><a href="../guides/errors-retries.html">Errors and retries in clients</a></li>
+      <li><a href="../guides/auth.html">Authentication and authorization</a></li>
+      <li><a href="../guides/crypto.html">Guest cryptography</a></li>
+      <li><a href="../guides/workers.html">Worker queues</a></li>
+      <li><a href="../guides/deployments.html">Deployments</a></li>
+      <li><a href="../guides/backups.html">Backups and restore</a></li>
+      <li><a href="../guides/operations.html">Operating a cluster</a></li>
+      <li><a href="../guides/testing.html">Testing applications</a></li>
+    </ul>
+    <h2>Reference</h2>
+    <ul>
+      <li><a href="../reference/http.html">HTTP API</a></li>
+      <li><a href="../reference/cli.html">cargo flower</a></li>
+      <li><a href="../reference/sdk.html">flower-sdk</a></li>
+      <li><a href="../reference/errors.html">Error codes and limits</a></li>
+    </ul>
+  </nav>
+  <div class="main">
+    <main class="content" id="content">
+      <p class="breadcrumb">Concepts</p>
+<!-- content -->
+<h1>Transactions and partitions</h1>
+<p class="lede">A mutation is atomic within one database. A transaction runs mutations in several databases — in one group or across groups — and commits all of them or none.</p>
+
+<h2 id="steps">Transactions are lists of steps</h2>
+
+<p>A transaction is a list of <strong>steps</strong>, each naming a database, a module, a mutation the module exposes over HTTP (<code>method</code>) and its arguments. Each step must target a <em>different</em> database. Send it to <code>POST /v1/transaction</code>:</p>
+
+<pre><code class="language-bash">curl -s http://127.0.0.1:8080/v1/transaction -H 'content-type: application/json' -d '{
+  "steps": [
+    {"db": "demo",    "module": "tasks", "method": "complete_task", "args": {"id": "eggs"}},
+    {"db": "archive", "module": "tasks", "method": "add_task",      "args": {"id": "eggs", "title": "Buy eggs"}}
+  ],
+  "idempotency_key": "archive-eggs"
+}'</code></pre>
+
+<pre><code class="language-json">{"ok":true,"value":[{"done":true,"title":"Buy eggs"},{"done":false,"title":"Buy eggs"}],"revision":6,"position":44,"revisions":{"archive":1,"demo":6},"duplicate":false}</code></pre>
+
+<p><code>value</code> holds each step's result in order, and <code>revisions</code> the revision each database reached. If any step fails, nothing commits anywhere, and the answer is that step's failure, with HTTP 422 like any call's own failure:</p>
+
+<pre><code class="language-json">{"ok":false,"revision":6,"position":0,"code":"TASK_EXISTS","message":"a task with this ID already exists","duplicate":false}</code></pre>
+
+<p>The same transaction from the CLI and from Rust:</p>
+
+<pre><code class="language-bash">cargo flower transaction \
+  --steps '[{"db":"demo","module":"tasks","method":"add_task","args":{"id":"jam","title":"Jam"}},
+            {"db":"archive","module":"tasks","method":"add_task","args":{"id":"jam","title":"Jam"}}]'</code></pre>
+
+<pre><code class="language-rust" data-include="examples/client/src/lib.rs#transaction">pub async fn archive(client: &amp;FlowerClient, id: &amp;str) -&gt; Result&lt;TransactionResult, FlowerError&gt; {
+    let steps = vec![
+        TransactionStep {
+            db: "demo".to_string(),
+            module: "tasks".to_string(),
+            method: "complete_task".to_string(),
+            args: json!({"id": id}),
+        },
+        TransactionStep {
+            db: "archive".to_string(),
+            module: "tasks".to_string(),
+            method: "add_task".to_string(),
+            args: json!({"id": id, "title": "archived"}),
+        },
+    ];
+    let options = TransactionOptions {
+        request_id: Some(format!("archive:{id}")),
+        ..TransactionOptions::new()
+    };
+    client.transaction(&amp;steps, &amp;options).await
+}</code></pre>
+
+<h2 id="semantics">What a transaction guarantees</h2>
+
+<ul>
+  <li><strong>All or nothing.</strong> Every step commits, or none does.</li>
+  <li><strong>Steps are isolated from each other.</strong> Each step prepares in its own session against its own database; a step never sees another step's writes. Pass whatever a later step needs in its arguments.</li>
+  <li><strong>Each database stays consistent.</strong> Steps are validated against the latest state of their database at commit, just like mutations. Transactions take no <code>expected_revision</code>.</li>
+  <li><strong>Retries are safe.</strong> An <code>idempotency_key</code> works as for mutations: a retry answers the recorded outcome with <code>"duplicate": true</code>. Transactions accept only plain keys, not scoped <code>f1:</code>/<code>f2:</code> IDs.</li>
+  <li>Steps call what each module exposes over HTTP (<code>http</code> on the mutation; anything else answers 404 <code>UNKNOWN_METHOD</code>), under the caller's credentials, and each module's authorization hook decides as for a single call.</li>
+  <li><strong>One deadline.</strong> The whole transaction — every step and everything it nests — runs under one deadline: 60 seconds, or less when the caller's <code>x-flower-timeout-ms</code> says so.</li>
+  <li><strong>Bounded by size, not by count.</strong> There is no limit on the number of steps. What bounds a transaction is the size of what it commits: an entry larger than the operator's <code>--max-transaction-bytes</code> (32 MiB by default) fails with <code>413 transaction_too_large</code> before anything is proposed, naming the measured and allowed sizes. The same bound applies to a single mutation's writes.</li>
+</ul>
+
+<h3 id="within-a-group">Within one group</h3>
+
+<p>When every database lives in the same Raft group — the usual case, since unplaced databases all live in <code>root</code> — the transaction commits as one log entry at one position. Watchers of each database see the change at that database's new revision.</p>
+
+<h3 id="across-groups">Across groups</h3>
+
+<p>When the databases live in different groups, the first step's group coordinates a two-phase commit: it records the transaction durably, asks each participant group to prepare, decides, and has every participant finish. A participant persists its read and write footprint, including the transitive source dependencies behind cached derived values. Every replica checks that same footprint, even when its own derived cache differs. Independent writes can continue, including writes that store retry receipts or maintain unrelated derived values. Conflicting writes wait within their deadlines.</p>
+<p>Timer and queue reads protect the rows and ranges they actually inspected; they do not block unrelated writes merely because they are volatile for query caching. Reads outside the snapshot (retained history or native untracked reads), cached derived values with untracked dependencies, scans over derived-cache entries, oversized footprints and older derived footprints without source proofs retain a whole-database fence. Deployments, partition freezes and a second distributed prepare of the same database still wait; the second prepare gives up after a second with <code>transaction_conflict</code>. Reads never wait, and never see prepared but undecided state.</p>
+
+<ul>
+  <li>The answer carries <code>positions</code>: the log position in each participant group.</li>
+  <li>Each group applies its part on its own, so a reader that looks at two groups in quick succession may briefly see one side committed before the other. Atomicity is about outcomes, not about a single instant of visibility across groups.</li>
+  <li>If the coordinator fails, participants that prepared ask it for the decision; undecided transactions in which every participant prepared commit, others abort. Operators can list and abort stuck transactions with <code>cargo flower transactions</code>.</li>
+</ul>
+
+<div class="callout">
+<p><span class="callout-title">Planned in the guest</span> A module can also plan a transaction itself. <code>Transaction::new(name, planner).args(schema)</code> declares a raw planner, a function from the arguments to a <code>Plan</code> of calls; listed among the app's components and declared <code>.http()</code>, it answers <code>POST /v1/mutate</code> under its name: the planner runs under its deadline, and its calls run in one session and commit together. There is no typed-planner macro: a planner validates and encodes its arguments by hand.</p>
+</div>
+
+<h2 id="partitions">Partitions</h2>
+
+<p>Placing a database in its own group — making it a <a href="databases.html#named-partitions-and-groups">named partition</a> — changes where it runs, not how you call it. Clients keep naming the database; the server routes each call to the owning group. Reasons to partition:</p>
+
+<ul>
+  <li><strong>Isolation.</strong> A busy tenant's writes queue on its group's leader, not on everyone's.</li>
+  <li><strong>Scale.</strong> Each group has its own leader and log, so write throughput grows with groups placed on different servers.</li>
+  <li><strong>Placement.</strong> A group's members can be the servers in one region.</li>
+</ul>
+
+<p>The cost is that work spanning partitions in different groups becomes a cross-group transaction, with the locking described above. Design partitions so that most mutations touch one database.</p>
+
+<p>Operators create groups and place, move and retire partitions with <code>cargo flower group</code> and <code>cargo flower partition</code>; see <a href="../guides/operations.html#groups-and-partitions">Operating a cluster</a>. While a partition moves, its calls briefly answer <code>503 partition_moving</code> with <code>Retry-After: 1</code>; after the move, the old owner answers <code>partition_moved</code> and the server retries at the new owner for you.</p>
+<!-- /content -->
+      <nav class="page-nav" aria-label="Previous and next">
+        <a class="prev" href="modules.html" rel="prev">← Modules and interfaces</a>
+        <a class="next" href="../guides/rust-client.html" rel="next">Calling Flower from Rust →</a>
+      </nav>
+      <footer class="site-footer">
+        <p><a href="https://github.com/ipsomachina/flower">Flower on GitHub</a> · <a href="../../LICENSE">MIT license</a> · <a href="https://ipsomachina.com/privacy">Privacy &amp; legal notice</a></p>
+        <p>© 2026 <a href="https://ipsomachina.com">Ipso Machina</a> · Avenue de Chamonix 3 · 1207 Genève · Switzerland</p>
+      </footer>
+    </main>
+    <nav class="toc" aria-label="On this page">
+      <h2>On this page</h2>
+      <ul>
+        <li class="depth-2"><a href="#steps">Transactions are lists of steps</a></li>
+        <li class="depth-2"><a href="#semantics">What a transaction guarantees</a></li>
+        <li class="depth-3"><a href="#within-a-group">Within one group</a></li>
+        <li class="depth-3"><a href="#across-groups">Across groups</a></li>
+        <li class="depth-2"><a href="#partitions">Partitions</a></li>
+      </ul>
+    </nav>
+  </div>
+  </div>
+  <script src="../assets/search-index.js"></script>
+  <script src="../assets/docs.js"></script>
+</body>
+</html>

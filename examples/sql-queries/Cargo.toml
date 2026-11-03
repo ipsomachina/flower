@@ -1,0 +1,17 @@
+[package]
+license.workspace = true
+name = "sql-queries"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+description = "Typed, bounded SQL queries over Flower collections"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+flower-sdk = { path = "../../crates/flower-sdk" }
+
+[lints]
+workspace = true

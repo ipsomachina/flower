@@ -1,0 +1,425 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Authentication and authorization · Flower docs</title>
+  <meta name="description" content="The authorization hook, typed authenticators such as JwtBearer, and access policies with redaction.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://flower.ipsomachina.com/docs/guides/auth.html">
+  <meta property="og:title" content="Authentication and authorization">
+  <meta property="og:description" content="The authorization hook, typed authenticators such as JwtBearer, and access policies with redaction.">
+  <meta property="og:image" content="https://flower.ipsomachina.com/social.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Flower logo on a white background">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" type="image/svg+xml" href="../../favicon.svg">
+  <link rel="stylesheet" href="../assets/docs.css">
+</head>
+<body data-root="../">
+  <a class="skip-link" href="#content">Skip to content</a>
+  <header class="site-header">
+    <button class="menu-button" id="menu-toggle" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="sidebar"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M3 5.5h14M3 10h14M3 14.5h14"/></svg></button>
+    <a class="brand" href="../index.html"><svg viewBox="0 0 80 80" width="32" height="32" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(0 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(60 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(120 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(180 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(240 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(300 40 40)"/></svg><span class="brand-name">FLOWER</span><span class="brand-docs">Documentation</span></a>
+    <div class="header-spacer"></div>
+    <div class="search" role="search">
+      <input id="search-input" type="search" placeholder="Search" autocomplete="off" spellcheck="false" aria-label="Search the documentation" aria-controls="search-results" aria-expanded="false" role="combobox">
+      <div class="search-results" id="search-results" role="listbox" hidden></div>
+    </div>
+    <a class="header-link" href="../../index.html">Home</a>
+    <a class="header-link" href="https://github.com/ipsomachina/flower">GitHub</a>
+  </header>
+  <div class="scrim" id="scrim" hidden></div>
+  <div class="layout">
+  <nav class="sidebar" id="sidebar" aria-label="Documentation">
+    <h2>Get started</h2>
+    <ul>
+      <li><a href="../index.html">Introduction</a></li>
+      <li><a href="../quickstart.html">Quickstart</a></li>
+    </ul>
+    <h2>Concepts</h2>
+    <ul>
+      <li><a href="../concepts/databases.html">Databases, modules and groups</a></li>
+      <li><a href="../concepts/collections.html">Collections and indexes</a></li>
+      <li><a href="../concepts/methods.html">Queries and mutations</a></li>
+      <li><a href="../concepts/derived.html">Derived values and aggregates</a></li>
+      <li><a href="../concepts/consistency.html">Revisions and consistency</a></li>
+      <li><a href="../concepts/retries.html">Retries and receipts</a></li>
+      <li><a href="../concepts/watches.html">Watches</a></li>
+      <li><a href="../concepts/time.html">Time</a></li>
+      <li><a href="../concepts/queues-timers.html">Queues and timers</a></li>
+      <li><a href="../concepts/modules.html">Modules and interfaces</a></li>
+      <li><a href="../concepts/transactions.html">Transactions and partitions</a></li>
+    </ul>
+    <h2>Guides</h2>
+    <ul>
+      <li><a href="rust-client.html">Calling Flower from Rust</a></li>
+      <li><a href="sql.html">SQL queries</a></li>
+      <li><a href="errors-retries.html">Errors and retries in clients</a></li>
+      <li><a href="auth.html" aria-current="page">Authentication and authorization</a></li>
+      <li><a href="crypto.html">Guest cryptography</a></li>
+      <li><a href="workers.html">Worker queues</a></li>
+      <li><a href="deployments.html">Deployments</a></li>
+      <li><a href="backups.html">Backups and restore</a></li>
+      <li><a href="operations.html">Operating a cluster</a></li>
+      <li><a href="testing.html">Testing applications</a></li>
+    </ul>
+    <h2>Reference</h2>
+    <ul>
+      <li><a href="../reference/http.html">HTTP API</a></li>
+      <li><a href="../reference/cli.html">cargo flower</a></li>
+      <li><a href="../reference/sdk.html">flower-sdk</a></li>
+      <li><a href="../reference/errors.html">Error codes and limits</a></li>
+    </ul>
+  </nav>
+  <div class="main">
+    <main class="content" id="content">
+      <p class="breadcrumb">Guides</p>
+<!-- content -->
+<h1>Authentication and authorization</h1>
+<p class="lede">The server does not know your users. Each module decides who a caller is with an authorization component, each method declares who may call it, and collections can protect rows and fields with declarative access policies the engine enforces on every read and write.</p>
+
+<h2 id="the-pipeline">How a call is authorized</h2>
+
+<ol class="steps">
+  <li>The server resolves the name. Only methods declared <code>http</code> answer; any other name answers <code>404 UNKNOWN_METHOD</code>, whether or not the module defines it.</li>
+  <li>The server turns the request's credentials into a JSON value: the body's <code>credentials</code> member if present, otherwise <code>{"bearer": "&lt;token&gt;"}</code> from an <code>Authorization: Bearer</code> header — unless the token is one of the server's own tokens, which are never shown to guest code — otherwise <code>null</code>. Watches are requests like the others: the same body, the same header.</li>
+  <li>If the module lists an <code>Authorization</code> component, its hook runs on the call's own snapshot. It authenticates the caller into a <strong>principal</strong> and checks the method's access, or refuses. A refusal answers <code>403</code> with code <code>unauthorized</code> and a message starting with the hook's own code: <code>UNAUTHENTICATED: authentication required</code>, <code>FORBIDDEN: access denied</code>.</li>
+  <li>The method runs. It reads the principal with <code>ctx.principal()</code>, and every collection operation it performs is checked against that collection's access policy.</li>
+</ol>
+
+<p>A module without a hook runs every call anonymously. Calls without an external caller — timer firings, triggers, maintenance tasks, derived evaluations — skip the hook and run with the module's own rights.</p>
+
+<h2 id="jwt-bearer">Bearer JWTs with <code>JwtBearer</code></h2>
+
+<p>The usual setup verifies JSON Web Tokens from an identity provider. <code>JwtBearer</code> is a ready-made typed authenticator:</p>
+
+<pre><code class="language-rust" data-include="examples/snippets/src/auth.rs#jwt-bearer">/// An ES256 public key from your identity provider, as PEM.
+const IDP_PUBLIC_KEY: &amp;str = "-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----\n";
+
+static BEARER: JwtBearer = JwtBearer {
+    issuer: Some("https://auth.example.com/"),
+    audience: &amp;["notes-api"],
+    clock_tolerance_seconds: 30.0,
+    ..JwtBearer::new(BearerKey::Pem(IDP_PUBLIC_KEY, &amp;[Algorithm::Es256]))
+};
+
+/// List it among the app's components, at most one per module.
+pub static AUTHORIZATION: Authorization = Authorization {
+    authenticate: Authentication::Typed(&amp;BEARER),
+    // Methods that declare no `access` need a signed-in caller...
+    default: Access::Authenticated,
+    // ...as do retry sessions.
+    sessions: Access::Authenticated,
+    // Access for what other macros declare (`external!` operations,
+    // interface providers), by name.
+    methods: &amp;[],
+};
+
+/// A method declares its own access where it differs from the default.
+#[query(http, access = public)]
+pub fn health(ctx: &amp;mut QueryCtx&lt;'_, '_&gt;) -&gt; String {
+    let _ = ctx;
+    String::from("ok")
+}</code></pre>
+
+<ul>
+  <li><strong>Keys.</strong> <code>BearerKey::Pem(pem, &amp;[algorithms])</code> takes a PEM public key; <code>BearerKey::Bytes(bytes, KeyFormat::Raw | Der, &amp;[algorithms])</code> an HS256 secret or a DER public key; <code>BearerKey::Managed(&amp;KEY)</code> a <a href="crypto.html#managed-keys">managed key</a> from the cluster's catalog (for tokens your own module issued with that key). Algorithms are <code>Hs256</code>, <code>Rs256</code>, <code>Es256</code> and <code>EdDsa</code>. There is no JWKS fetching: guests have no network, so embed the provider's keys or store them in a collection and use a callback hook.</li>
+  <li><strong>Claims.</strong> <code>exp</code> is required. <code>issuer</code> makes <code>iss</code> required and exact. The audience check is strict both ways: with an <code>audience</code> list, the token's <code>aud</code> must contain one of them; without one, a token that carries <code>aud</code> is refused. Only the <code>alg</code>, <code>typ</code> and <code>kid</code> protected headers are accepted.</li>
+  <li><strong>Principal.</strong> By default (<code>claims_principal</code>), <code>sub</code> becomes the subject, a string <code>tenant</code> claim the tenant, and all claims the principal's <code>claims</code>. Set <code>principal</code> to your own <code>fn(&amp;Value) -&gt; Result&lt;Option&lt;Principal&gt;&gt;</code> to map claims differently.</li>
+  <li><strong>Credential shapes.</strong> It accepts the bearer header, <code>{"bearer": t}</code>, <code>{"token": t}</code> or a bare string; <code>null</code> is anonymous; anything else is <code>UNAUTHENTICATED</code>.</li>
+</ul>
+
+<p>Verification runs in the server's crypto host, which every server has: a PEM or raw key needs no setup. Only <code>BearerKey::Managed</code> needs the database's <a href="crypto.html#managed-keys">key catalog</a> provisioned.</p>
+
+<h2 id="access-levels">Method access</h2>
+
+<p>The <code>Authorization</code> component says how callers authenticate and what access applies where a method declares none:</p>
+
+<table>
+  <thead><tr><th>Field</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td><code>authenticate</code></td><td><code>Authentication::Typed(&amp;authenticator)</code>, <code>Callback(fn)</code>, <code>Gateway</code> (trust the principal a gateway holding the admin token asserts) or <code>Anonymous</code>.</td></tr>
+    <tr><td><code>default</code></td><td>Access for every method that declares none.</td></tr>
+    <tr><td><code>sessions</code></td><td>Access for opening, reading, acknowledging and closing <a href="../concepts/retries.html#scoped-ids">retry sessions</a>.</td></tr>
+    <tr><td><code>methods</code></td><td>Access for definitions declared where no <code>access</code> option reaches, by name: an <code>external!</code> value's operations, an interface provider's methods. Usually empty.</td></tr>
+  </tbody>
+</table>
+
+<p>A method states its own access in its declaration, where it differs from the default: <code>#[query(access = public)]</code>, <code>access = authenticated</code>, or <code>access = path::to::check</code> for a predicate. Raw descriptors take <code>.access(Access::..)</code>, and so do transactions (<code>Transaction::new(..).access(..)</code>). The manifest refuses a <code>methods</code> entry naming a definition the app does not have, one named twice, or one whose definition declares its own access — a typo cannot silently leave a method on the default — and it refuses any declared access in a module without an authorization component.</p>
+
+<p><code>Access::Public</code> lets anyone in, <code>Access::Authenticated</code> requires a principal (<code>UNAUTHENTICATED</code> otherwise), and <code>Access::Check(fn)</code> runs your predicate over the principal and the call's arguments (<code>FORBIDDEN</code> when it returns false). Authentication runs first, so invalid credentials are refused even for public methods; only <em>no</em> credentials make an anonymous caller. A module lists at most one <code>Authorization</code> among its components:</p>
+
+<pre><code class="language-rust" data-include="examples/snippets/src/auth.rs#app">pub static APP: App = App::new(&amp;[
+    &amp;AUTHORIZATION,
+    &amp;Notes,
+    &amp;HEALTH,
+    &amp;WHOAMI,
+    &amp;NOTE,
+    &amp;RETITLE,
+    &amp;FORGET_PRIVATE,
+]);</code></pre>
+
+<p>Methods read the principal through <code>MethodCtx</code>:</p>
+
+<pre><code class="language-rust" data-include="examples/snippets/src/auth.rs#whoami">#[derive(FlowerType, Clone, Debug, PartialEq)]
+pub struct Me {
+    pub subject: Option&lt;String&gt;,
+    pub tenant: Option&lt;String&gt;,
+}
+
+#[query(http, access = authenticated)]
+pub fn whoami(ctx: &amp;mut QueryCtx&lt;'_, '_&gt;) -&gt; Result&lt;Me&gt; {
+    let principal = ctx.principal()?;
+    Ok(Me {
+        subject: principal.as_ref().map(|p| p.subject.clone()),
+        tenant: principal.and_then(|p| p.tenant),
+    })
+}</code></pre>
+
+<h2 id="callback-hooks">Custom hooks</h2>
+
+<p>When credentials are not JWTs — opaque session tokens, API keys, signed requests — write the hook yourself. It is a query: it can read collections (with the module's own rights), read the clock and use guest crypto, but it cannot write. Here opaque session tokens are looked up in a <code>sessions</code> collection, and methods are open only to callers of the tenant they name:</p>
+
+<pre><code class="language-rust" data-include="examples/snippets/src/auth.rs#callback">/// Opaque session tokens: the session row decides who the caller is,
+/// until the session expires or the row changes.
+fn by_session(
+    ctx: &amp;mut QueryCtx&lt;'_, '_&gt;,
+    credentials: &amp;Value,
+    _request: &amp;AuthRequest,
+) -&gt; Result&lt;Option&lt;Principal&gt;&gt; {
+    let token = match credentials {
+        Value::Null =&gt; return Ok(None),
+        Value::Object(fields) =&gt; match fields.get("bearer") {
+            Some(Value::String(token)) =&gt; token.clone(),
+            _ =&gt; return Err(fail("UNAUTHENTICATED", "expected a bearer token")),
+        },
+        _ =&gt; return Err(fail("UNAUTHENTICATED", "expected a bearer token")),
+    };
+    let Some(session) = Sessions::get(ctx, &amp;token)? else {
+        return Err(fail("UNAUTHENTICATED", "unknown session"));
+    };
+    // `clock`, not `now`: the decision can then be kept until expiry.
+    if ctx.clock()? &gt;= session.expires_at {
+        return Err(fail("UNAUTHENTICATED", "session expired"));
+    }
+    ctx.changes_at(Some(session.expires_at))?;
+    Principal::new(session.user, Some(session.tenant), None).map(Some)
+}
+
+/// Only callers of the tenant the arguments name.
+fn same_tenant(
+    _ctx: &amp;mut QueryCtx&lt;'_, '_&gt;,
+    principal: Option&lt;&amp;Principal&gt;,
+    args: &amp;Value,
+) -&gt; Result&lt;bool&gt; {
+    let named = match args {
+        Value::Object(fields) =&gt; fields.get("tenant"),
+        _ =&gt; None,
+    };
+    Ok(match (principal.and_then(|p| p.tenant.as_deref()), named) {
+        (Some(mine), Some(Value::String(named))) =&gt; mine == named,
+        _ =&gt; false,
+    })
+}
+
+/// Every method checks the tenant unless it declares otherwise, as
+/// `whoami` does.
+pub static SESSION_AUTHORIZATION: Authorization = Authorization {
+    authenticate: Authentication::Callback(by_session),
+    default: Access::Check(same_tenant),
+    sessions: Access::Authenticated,
+    methods: &amp;[],
+};</code></pre>
+
+<p>Over HTTP, a missing or unknown token, or a caller of another tenant, is refused before the method runs:</p>
+
+<pre><code class="language-json">{"code":"unauthorized","message":"UNAUTHENTICATED: authentication required","ok":false}   // 403, no token
+{"code":"unauthorized","message":"UNAUTHENTICATED: unknown session","ok":false}         // 403, bad token
+{"ok":true,"value":{"subject":"ada","tenant":"acme"}}                                    // whoami as ada
+{"code":"unauthorized","message":"FORBIDDEN: access denied","ok":false}                 // 403, tenant "globex"</code></pre>
+
+<p>State-changing checks — consuming a one-time code, counting attempts — belong in a mutation, not the hook: the hook commits nothing.</p>
+
+<div class="callout">
+<p><span class="callout-title">Tenants and partitions</span> The hook is not told which database it serves. If tenants live in their own databases, bind the tenant to the database through the database's own data (a settings row naming its tenant), or through the arguments, as <code>same_tenant</code> does.</p>
+</div>
+
+<h2 id="decision-expiry">Decision reuse and expiry</h2>
+
+<p>Running the hook on every call would be wasteful, so the engine keeps its decisions in a memo (4 MiB by default, <code>--decision-memo-bytes</code>). A kept decision answers a later call with the same credentials while all of these hold:</p>
+
+<ul>
+  <li>the module's code has not changed;</li>
+  <li>nothing the hook read has changed — deleting the session row ends every decision that read it;</li>
+  <li>the decision has not expired: <code>JwtBearer</code> declares the token's <code>exp</code> (plus tolerance), and a callback hook declares with <code>ctx.changes_at</code>. The <strong>earliest</strong> declaration wins, so a session expiring in an hour cannot extend a token expiring in a minute;</li>
+  <li>for a hook that reads the arguments (callbacks and <code>Check</code> predicates), the arguments are the same.</li>
+</ul>
+
+<p>Denials are never kept, nor are decisions from a hook that called <code>now()</code>. Read the time with <code>clock()</code> and declare the expiry with <code>changes_at</code>, as <code>by_session</code> does. Retries of recorded writes are authorized again before they are answered, so a revoked caller cannot read a recorded result.</p>
+
+<h2 id="watches">Watches</h2>
+
+<p>A watch presents credentials as a query does, in its body or its <code>Authorization</code> header. Every watch delivery is authorized at the revision it shows. The server rechecks each subscriber when something the decision read changes, when the decision expires, when a managed key it used changes, and at least every 30 seconds. A subscriber who is no longer allowed gets an <code>error</code> event with code <code>unauthorized</code> and the stream ends; one whose principal changed (new claims, another tenant) gets <code>watch_scope_changed</code> and should reconnect.</p>
+
+<h2 id="access-policies">Access policies</h2>
+
+<p>Method access decides who may call. <strong>Access policies</strong> decide which rows and fields each caller may read and write, whatever method they call. A policy is a set of rules over operands — the stored row (<code>row</code>), the row being written (<code>next</code>), the key, the principal (<code>subject</code>, <code>tenant</code>, <code>claim</code>), the time (<code>now</code>) — attached to a collection with its <code>access</code> option, which names a <code>fn() -&gt; Policy</code>:</p>
+
+<pre><code class="language-rust" data-include="examples/snippets/src/auth.rs#policy">#[derive(FlowerType, Clone, Debug, PartialEq)]
+pub struct Note {
+    pub owner: String,
+    pub title: String,
+    /// Hidden from everyone but the owner: absent when redacted.
+    pub private: Field&lt;String&gt;,
+}
+
+/// The collection with its access policy.
+#[collection(
+    name = "notes",
+    key = String,
+    value = Note,
+    index(name = "by_owner", fields(owner), types(String)),
+    access = notes_policy,
+)]
+pub struct Notes;
+
+fn notes_policy() -&gt; Policy {
+    let mine = Operand::row(&amp;["owner"]).eq(Operand::subject());
+    let admin = Operand::claim(&amp;["role"]).eq(Operand::literal("admin"));
+    Policy::new()
+        .read(Rule::authenticated())
+        .insert(Operand::next(&amp;["owner"]).eq(Operand::subject()))
+        .update(
+            mine.clone()
+                .and(Operand::next(&amp;["owner"]).eq(Operand::row(&amp;["owner"]))),
+        )
+        .delete(mine.clone().or(admin))
+        .field("private", FieldAccess::new().read(mine))
+}</code></pre>
+
+<p>A raw <code>Collection</code> takes the same function with <code>.access(notes_policy)</code>.</p>
+
+<table>
+  <thead><tr><th>Rule</th><th>Checked on</th><th>Sees</th></tr></thead>
+  <tbody>
+    <tr><td><code>read</code></td><td>gets, scans, index ranges, history</td><td>the stored row, key, principal, time</td></tr>
+    <tr><td><code>insert</code></td><td>writing a new key</td><td>the written row (<code>next</code>)</td></tr>
+    <tr><td><code>update</code></td><td>replacing an existing row</td><td>both <code>row</code> and <code>next</code></td></tr>
+    <tr><td><code>delete</code></td><td>deleting</td><td>the stored row</td></tr>
+    <tr><td><code>write</code></td><td>shorthand for insert, update and delete</td><td></td></tr>
+    <tr><td><code>field(name, FieldAccess)</code></td><td>reading and changing one top-level field</td><td><code>read</code>: the stored row; <code>write</code>: both</td></tr>
+  </tbody>
+</table>
+
+<ul>
+  <li><strong>Deny by default.</strong> <code>Policy::new()</code> denies everything; an operation without a rule is refused. A collection without a policy is open.</li>
+  <li><strong>Missing is never equal.</strong> A comparison with a missing or null side is false, so an anonymous caller never matches <code>row.owner == subject</code>.</li>
+  <li><strong>Lookups.</strong> <code>Rule::stored(collection, key)</code> requires a row to exist in another collection of the module (a membership table, say); <code>Rule::readable(collection, key)</code> also requires the caller to be allowed to read it.</li>
+  <li><strong>Derived values</strong> take a single rule over the principal and arguments: <code>Derived::new(…).access(fn() -&gt; Rule)</code>. Derived values compute with the module's own rights and can see guarded rows — expose them deliberately.</li>
+  <li><strong>Cost.</strong> A policy is folded once per call and collection; rules that depend only on the caller cost nothing per row. When the read rule is <code>row.f == subject</code> and an index covers exactly <code>f</code>, scans read only that index bucket — so index the owner field.</li>
+</ul>
+
+<h2 id="redaction">Hidden rows and redacted fields</h2>
+
+<p>A row the caller may not read is invisible: <code>get</code> returns <code>None</code>, and scans and ranges drop it before applying limits and cursors. A visible row loses the fields the caller may not read — the member is absent, not null — and a typed row decodes it as <code>Field::Redacted</code>:</p>
+
+<pre><code class="language-rust" data-include="examples/snippets/src/auth.rs#redaction">#[derive(FlowerType, Clone, Debug, PartialEq)]
+pub struct NoteView {
+    pub title: String,
+    pub private: Option&lt;String&gt;,
+}
+
+#[query(http)]
+pub fn note(ctx: &amp;mut QueryCtx&lt;'_, '_&gt;, id: String) -&gt; Result&lt;Option&lt;NoteView&gt;&gt; {
+    // Rows the caller may not read come back as `None`; fields it may
+    // not read come back as `Field::Redacted`.
+    Ok(Notes::get(ctx, &amp;id)?.map(|note| NoteView {
+        title: note.title,
+        private: match note.private {
+            Field::Visible(text) =&gt; Some(text),
+            Field::Redacted =&gt; None,
+        },
+    }))
+}
+
+#[mutation(http)]
+pub fn retitle(ctx: &amp;mut MutationCtx&lt;'_, '_&gt;, id: String, title: String) -&gt; Result&lt;()&gt; {
+    let Some(note) = Notes::get(ctx, &amp;id)? else {
+        return Err(fail("NOT_FOUND", "no such note"));
+    };
+    // A redacted field cannot be encoded, so write the fields you may
+    // see; the engine keeps the stored values of the ones you may not.
+    let mut row = alloc::collections::BTreeMap::new();
+    row.insert(String::from("owner"), Value::String(note.owner));
+    row.insert(String::from("title"), Value::String(title));
+    if let Field::Visible(private) = note.private {
+        row.insert(String::from("private"), Value::String(private));
+    }
+    ctx.set(
+        CollectionRef::local(Notes::NAME),
+        &amp;Value::String(id),
+        Value::Object(row),
+    )
+}
+
+#[mutation(http)]
+pub fn forget_private(ctx: &amp;mut MutationCtx&lt;'_, '_&gt;, id: String) -&gt; Result&lt;()&gt; {
+    let Some(note) = Notes::get(ctx, &amp;id)? else {
+        return Ok(());
+    };
+    let mut row = alloc::collections::BTreeMap::new();
+    row.insert(String::from("owner"), Value::String(note.owner));
+    row.insert(String::from("title"), Value::String(note.title));
+    // Remove the field outright, even if this caller cannot see it:
+    // that takes the field's write rule.
+    ctx.set_clearing(
+        CollectionRef::local(Notes::NAME),
+        &amp;Value::String(id),
+        Value::Object(row),
+        &amp;["private"],
+    )
+}</code></pre>
+
+<ul>
+  <li>Writing back a row with hidden fields keeps their stored values, so a read-modify-write by a caller who cannot see everything loses nothing. A <code>Field::Redacted</code> cannot be encoded (<code>REDACTED_VALUE</code>), so write the visible fields, as <code>retitle</code> does.</li>
+  <li>To remove a field, including one the caller cannot see, use <code>set_clearing</code>: it takes the field's write rule.</li>
+  <li>A refused write fails with <code>ACCESS_DENIED</code>. In a mutation that is the call's own failure — 422 <code>{"ok":false,"revision":2,"position":11,"code":"ACCESS_DENIED","message":"access policy denies this write to `notes`","duplicate":false}</code> over HTTP — which a calling module can recover from with a savepoint.</li>
+  <li>Deleting a row the caller cannot see does nothing, as for a missing key.</li>
+</ul>
+
+<h2 id="gateways">Gateways and server tokens</h2>
+
+<p>The server has three tokens of its own, configured on <code>cargo flower serve</code>: the <strong>admin</strong> token (operator endpoints), the <strong>worker</strong> token (queue endpoints) and the <strong>sync</strong> token (replica sync). None of them is ever passed to a hook. A request bearing the admin token is a <strong>trusted gateway</strong>: it may assert the principal a call runs as (body <code>principal</code>: <code>{"subject", "tenant"?, "claims"?}</code>) and the time a mutation commits at (<code>timestamp_ms</code>), in call and watch bodies alike; from anyone else both fields are ignored. A hook decides what to make of an asserted principal — <code>Authentication::Gateway</code> trusts it outright, while <code>JwtBearer</code> still wants a token. Use this for a backend that authenticates users itself and calls Flower on their behalf. A gateway gets no more time than anyone: how long a call may run is the method's own declaration, which a caller can only shorten.</p>
+<!-- /content -->
+      <nav class="page-nav" aria-label="Previous and next">
+        <a class="prev" href="errors-retries.html" rel="prev">← Errors and retries in clients</a>
+        <a class="next" href="crypto.html" rel="next">Guest cryptography →</a>
+      </nav>
+      <footer class="site-footer">
+        <p><a href="https://github.com/ipsomachina/flower">Flower on GitHub</a> · <a href="../../LICENSE">MIT license</a> · <a href="https://ipsomachina.com/privacy">Privacy &amp; legal notice</a></p>
+        <p>© 2026 <a href="https://ipsomachina.com">Ipso Machina</a> · Avenue de Chamonix 3 · 1207 Genève · Switzerland</p>
+      </footer>
+    </main>
+    <nav class="toc" aria-label="On this page">
+      <h2>On this page</h2>
+      <ul>
+        <li class="depth-2"><a href="#the-pipeline">How a call is authorized</a></li>
+        <li class="depth-2"><a href="#jwt-bearer">Bearer JWTs with JwtBearer</a></li>
+        <li class="depth-2"><a href="#access-levels">Method access</a></li>
+        <li class="depth-2"><a href="#callback-hooks">Custom hooks</a></li>
+        <li class="depth-2"><a href="#decision-expiry">Decision reuse and expiry</a></li>
+        <li class="depth-2"><a href="#watches">Watches</a></li>
+        <li class="depth-2"><a href="#access-policies">Access policies</a></li>
+        <li class="depth-2"><a href="#redaction">Hidden rows and redacted fields</a></li>
+        <li class="depth-2"><a href="#gateways">Gateways and server tokens</a></li>
+      </ul>
+    </nav>
+  </div>
+  </div>
+  <script src="../assets/search-index.js"></script>
+  <script src="../assets/docs.js"></script>
+</body>
+</html>

@@ -1,0 +1,17 @@
+[package]
+license.workspace = true
+name = "external-transactions"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+description = "External values and cross-database transactions as a Flower guest (v1 examples/external-transactions-rs)"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+flower-sdk = { path = "../../crates/flower-sdk" }
+
+[lints]
+workspace = true

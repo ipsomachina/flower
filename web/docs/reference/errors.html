@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Error codes and limits · Flower docs</title>
+  <meta name="description" content="Failure codes, their HTTP statuses, retryability and runtime limits.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://flower.ipsomachina.com/docs/reference/errors.html">
+  <meta property="og:title" content="Error codes and limits">
+  <meta property="og:description" content="Failure codes, their HTTP statuses, retryability and runtime limits.">
+  <meta property="og:image" content="https://flower.ipsomachina.com/social.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Flower logo on a white background">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" type="image/svg+xml" href="../../favicon.svg">
+  <link rel="stylesheet" href="../assets/docs.css">
+</head>
+<body data-root="../">
+  <a class="skip-link" href="#content">Skip to content</a>
+  <header class="site-header">
+    <button class="menu-button" id="menu-toggle" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="sidebar"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M3 5.5h14M3 10h14M3 14.5h14"/></svg></button>
+    <a class="brand" href="../index.html"><svg viewBox="0 0 80 80" width="32" height="32" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(0 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(60 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(120 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(180 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(240 40 40)"/><ellipse cx="40" cy="25" rx="10" ry="18" transform="rotate(300 40 40)"/></svg><span class="brand-name">FLOWER</span><span class="brand-docs">Documentation</span></a>
+    <div class="header-spacer"></div>
+    <div class="search" role="search">
+      <input id="search-input" type="search" placeholder="Search" autocomplete="off" spellcheck="false" aria-label="Search the documentation" aria-controls="search-results" aria-expanded="false" role="combobox">
+      <div class="search-results" id="search-results" role="listbox" hidden></div>
+    </div>
+    <a class="header-link" href="../../index.html">Home</a>
+    <a class="header-link" href="https://github.com/ipsomachina/flower">GitHub</a>
+  </header>
+  <div class="scrim" id="scrim" hidden></div>
+  <div class="layout">
+  <nav class="sidebar" id="sidebar" aria-label="Documentation">
+    <h2>Get started</h2>
+    <ul>
+      <li><a href="../index.html">Introduction</a></li>
+      <li><a href="../quickstart.html">Quickstart</a></li>
+    </ul>
+    <h2>Concepts</h2>
+    <ul>
+      <li><a href="../concepts/databases.html">Databases, modules and groups</a></li>
+      <li><a href="../concepts/collections.html">Collections and indexes</a></li>
+      <li><a href="../concepts/methods.html">Queries and mutations</a></li>
+      <li><a href="../concepts/derived.html">Derived values and aggregates</a></li>
+      <li><a href="../concepts/consistency.html">Revisions and consistency</a></li>
+      <li><a href="../concepts/retries.html">Retries and receipts</a></li>
+      <li><a href="../concepts/watches.html">Watches</a></li>
+      <li><a href="../concepts/time.html">Time</a></li>
+      <li><a href="../concepts/queues-timers.html">Queues and timers</a></li>
+      <li><a href="../concepts/modules.html">Modules and interfaces</a></li>
+      <li><a href="../concepts/transactions.html">Transactions and partitions</a></li>
+    </ul>
+    <h2>Guides</h2>
+    <ul>
+      <li><a href="../guides/rust-client.html">Calling Flower from Rust</a></li>
+      <li><a href="../guides/sql.html">SQL queries</a></li>
+      <li><a href="../guides/errors-retries.html">Errors and retries in clients</a></li>
+      <li><a href="../guides/auth.html">Authentication and authorization</a></li>
+      <li><a href="../guides/crypto.html">Guest cryptography</a></li>
+      <li><a href="../guides/workers.html">Worker queues</a></li>
+      <li><a href="../guides/deployments.html">Deployments</a></li>
+      <li><a href="../guides/backups.html">Backups and restore</a></li>
+      <li><a href="../guides/operations.html">Operating a cluster</a></li>
+      <li><a href="../guides/testing.html">Testing applications</a></li>
+    </ul>
+    <h2>Reference</h2>
+    <ul>
+      <li><a href="http.html">HTTP API</a></li>
+      <li><a href="cli.html">cargo flower</a></li>
+      <li><a href="sdk.html">flower-sdk</a></li>
+      <li><a href="errors.html" aria-current="page">Error codes and limits</a></li>
+    </ul>
+  </nav>
+  <div class="main">
+    <main class="content" id="content">
+      <p class="breadcrumb">Reference</p>
+<!-- content -->
+<h1>Error codes and limits</h1>
+<p class="lede">Every failure carries a stable code. <code>UPPER_SNAKE_CASE</code> codes come from guests and the SDK — yours among them; lowercase codes come from the engine and server. The HTTP status tells a client what to do.</p>
+
+<h2 id="reading-a-failure">Reading a failure</h2>
+
+<ul>
+  <li><strong>422</strong> is the call's own answer: a code its code chose, bad arguments, a limit it ran out of, its code trapping, and every failure a mutation or transaction recorded. The body is <code>{"ok":false,"code","message","details"?}</code>, plus <code>revision</code>, <code>position</code> and <code>duplicate</code> for a recorded write. Final: show it, don't retry it.</li>
+  <li><strong>503</strong> means nothing ran, or the outcome is unknown and another attempt may get through; retry, writes with the same request ID.</li>
+  <li><strong>400</strong>, <strong>404</strong>, <strong>413</strong> and <strong>415</strong> refuse the request itself; <strong>403</strong> refuses the caller; <strong>409</strong> refuses an operator change; <strong>500</strong> is any other host failure.</li>
+  <li>The authorization component's refusals are wrapped: code <code>unauthorized</code>, message <code>"&lt;HOOK CODE&gt;: &lt;message&gt;"</code>.</li>
+</ul>
+
+<p>The status column below is what a call answers when it fails with that code; "—" marks codes a guest sees from an SDK or host call and handles itself (a call that returns one fails with 422).</p>
+
+<h2 id="codec-and-call">Codecs and calls</h2>
+
+<table>
+  <thead><tr><th>Code</th><th>HTTP</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td><code>INVALID_ARGUMENT</code></td><td>422</td><td>The arguments do not match the method's argument struct, before your code runs; <code>details.path</code> names the member (<code>["id"]</code>, or member names and indexes).</td></tr>
+    <tr><td><code>TYPE_MISMATCH</code></td><td>—</td><td>A value has the wrong JSON kind for its type.</td></tr>
+    <tr><td><code>MISSING_FIELD</code></td><td>—</td><td>A required member is absent.</td></tr>
+    <tr><td><code>INVALID_VALUE</code></td><td>422</td><td>Right kind, invalid content: a non-integer, an unknown member, an out-of-range option, a cursor from another range, a transaction naming a database twice.</td></tr>
+    <tr><td><code>DEPTH_LIMIT</code></td><td>—</td><td>Nesting deeper than 128.</td></tr>
+    <tr><td><code>REDACTED_VALUE</code></td><td>—</td><td>Encoding a <code>Field::Redacted</code>.</td></tr>
+    <tr><td><code>SCHEMA_MISMATCH</code></td><td>422</td><td>A value the engine checks against a contract was refused: arguments another module, a timer, a queue or a transaction plan passed; a stored row; a payload.</td></tr>
+    <tr><td><code>UNKNOWN_METHOD</code></td><td>404</td><td>No definition with <code>http</code> has this name in the module, or the module or database does not exist.</td></tr>
+    <tr><td><code>INVALID_INVOCATION</code></td><td>422</td><td>A method called as the wrong kind (a mutation through <code>/v1/query</code>), or entropy outside a mutation.</td></tr>
+    <tr><td><code>stale_revision</code></td><td>422</td><td><code>expected_revision</code> no longer matches.</td></tr>
+    <tr><td><code>cascade_too_deep</code></td><td>422</td><td>Triggers and reference cascades exceeded 16 rounds.</td></tr>
+    <tr><td><code>transaction_too_large</code></td><td>413</td><td>The write's committed effects outgrow <code>--max-transaction-bytes</code> (32 MiB); nothing was proposed.</td></tr>
+    <tr><td><code>JOB_EXISTS</code></td><td>—</td><td>A named job is already pending or claimed in its scope.</td></tr>
+    <tr><td><code>queue_undeclared</code></td><td>422</td><td>Guest code named a queue its module does not declare: list the queue among the app's components.</td></tr>
+    <tr><td><code>queue_purging</code></td><td>503 (calls), 200 <code>ok:false</code> (queue protocol)</td><td>The queue belongs to a removed module whose data is being purged. It changed nothing and ends with the purge: retry. The Rust client counts it transient, and workers wait it out.</td></tr>
+    <tr><td><code>bad_request</code></td><td>400</td><td>The body is not the endpoint's JSON, or a header or request ID is malformed.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="access">Authorization and access</h2>
+
+<table>
+  <thead><tr><th>Code</th><th>HTTP</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td><code>unauthorized</code></td><td>403</td><td>The module's authorization component refused the caller; the message starts with its code: <code>UNAUTHENTICATED</code> (no or bad credentials), <code>FORBIDDEN</code> (an <code>Access::Check</code> said no), or your own.</td></tr>
+    <tr><td><code>ACCESS_DENIED</code></td><td>422 (writes), 403 (queries)</td><td>An access policy refused a write, or a caller may not read a derived value.</td></tr>
+    <tr><td><code>forbidden</code></td><td>403</td><td>A server endpoint's token is missing or wrong.</td></tr>
+    <tr><td><code>watch_scope_changed</code></td><td>SSE</td><td>A watcher's principal changed; reconnect.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="modules">Modules and deployments</h2>
+
+<table>
+  <thead><tr><th>Code</th><th>HTTP</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td><code>MODULE_PRIVATE</code></td><td>—</td><td>Another module's item is not exported, or not to this caller.</td></tr>
+    <tr><td><code>MODULE_READ_ONLY</code></td><td>—</td><td>Writing another module's exported collection.</td></tr>
+    <tr><td><code>MODULE_CONFLICT</code></td><td>409</td><td>A deployment or removal would break a link between modules.</td></tr>
+    <tr><td><code>MODULE_CONTRACT_VIOLATION</code></td><td>—</td><td>A provider answered outside its declared contract.</td></tr>
+    <tr><td><code>invalid_module</code>, <code>invalid_manifest</code></td><td>500</td><td>The Wasm or its manifest failed validation at deployment: a field reference without a covering index, for example. <code>cargo flower plan</code> runs the same checks offline.</td></tr>
+    <tr><td><code>deployment</code>, <code>deployment_in_progress</code></td><td>409</td><td>A staging step refused, or another deployment of the module is running.</td></tr>
+    <tr><td><code>host_trap</code></td><td>422</td><td>The guest trapped: a panic or an ABI violation.</td></tr>
+    <tr><td><code>init_failed</code></td><td>422</td><td>The app's <code>init</code> callback failed.</td></tr>
+    <tr><td><code>module_unavailable</code></td><td>503</td><td>This member holds no runtime for the module yet (loading, or removed meanwhile).</td></tr>
+    <tr><td><code>instantiation_failed</code></td><td>503</td><td>An instance could not start on this member.</td></tr>
+    <tr><td><code>instances_exhausted</code></td><td>503</td><td>No free instance slot in the process's pool.</td></tr>
+    <tr><td><code>aggregate_context_forbidden</code></td><td>—</td><td>An aggregate's reducer reached for a context; reducers are pure.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="budgets">Deadlines and budgets</h2>
+
+<table>
+  <thead><tr><th>Code</th><th>HTTP</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td><code>deadline_exceeded</code></td><td>422</td><td>The call ran past its own deadline: its method's <code>timeout</code>, the operator's default, or its transaction's. Declare a longer <code>timeout</code>, or do less per call.</td></tr>
+    <tr><td><code>budget_exhausted</code></td><td>422</td><td>The instruction or host-operation budget derived from the call's deadline ran out: the same on every member.</td></tr>
+    <tr><td><code>caller_deadline_exceeded</code></td><td>503</td><td>The caller's <code>x-flower-timeout-ms</code> passed first. An attempt with more time may succeed.</td></tr>
+    <tr><td><code>out_of_memory</code></td><td>422</td><td>An instance or the invocation hit its memory limit.</td></tr>
+    <tr><td><code>stack_overflow</code></td><td>422</td><td>The Wasm stack overflowed.</td></tr>
+    <tr><td><code>nesting_too_deep</code></td><td>422</td><td>More than 32 nested calls.</td></tr>
+  </tbody>
+</table>
+
+<p>These end the invocation: savepoints cannot catch them.</p>
+
+<h2 id="sql">SQL failures</h2>
+<table><thead><tr><th>Code</th><th>HTTP</th><th>Meaning</th></tr></thead><tbody>
+<tr><td><code>SQL_INVALID</code></td><td>422</td><td>Invalid syntax, logical binding, plan name, limit or unsupported access path. Parser errors include zero-based UTF-8 <code>start_byte</code> and exclusive <code>end_byte</code> offsets.</td></tr>
+<tr><td><code>SQL_BUDGET</code></td><td>422</td><td>A configured candidate, byte or work ceiling was exhausted. Evaluator failures identify the dimension in <code>details.budget</code>. No partial result is returned.</td></tr>
+</tbody></table>
+<p>Parameter contract mismatches use <code>INVALID_ARGUMENT</code>; reading a collection outside an endpoint's scope uses <code>ACCESS_DENIED</code>. SQL failures are separate from the invocation's host-fuel exhaustion. See <a href="../guides/sql.html#budgets">SQL budgets and limits</a>.</p>
+<h2 id="retries">Retries and receipts</h2>
+
+<p>Recorded outcomes of a write, answered 422: <code>identity_conflict</code>, <code>epoch_retired</code>, <code>epoch_not_admitted</code>, <code>wrong_history</code>, <code>receipt_released</code>, <code>receipt_budget_exceeded</code>, <code>retry_session_unknown</code>, <code>retry_session_mismatch</code>, <code>retry_session_closed</code>, <code>retry_session_forbidden</code>, <code>retention_not_initialized</code>, <code>already_acknowledged</code>, <code>retry_ack_gap</code>, <code>retry_ack_budget</code>, <code>retention_epoch_moved</code>. See <a href="../concepts/retries.html#refusals">Retries and receipts</a>.</p>
+
+<h2 id="cluster">Cluster and availability</h2>
+
+<table>
+  <thead><tr><th>Code</th><th>HTTP</th><th>Meaning</th><th>Write outcome</th></tr></thead>
+  <tbody>
+    <tr><td><code>overloaded</code></td><td>503</td><td>Admission refused, or the member holds its limit of watch arguments; honour <code>Retry-After</code>.</td><td>not run</td></tr>
+    <tr><td><code>quorum</code></td><td>503</td><td>No quorum to prove a read or commit in time.</td><td>not run</td></tr>
+    <tr><td><code>forward</code></td><td>503</td><td>No leader reachable from this member (<code>leader</code> names the last known).</td><td>not run</td></tr>
+    <tr><td><code>stale_replica</code></td><td>503</td><td>A replica-local read past its bound could not prove freshness.</td><td>—</td></tr>
+    <tr><td><code>recovering</code>, <code>rejoining</code></td><td>503</td><td>The member is catching up after a restart.</td><td>not run</td></tr>
+    <tr><td><code>storage_failed</code>, <code>host_io</code></td><td>503</td><td>The member's storage failed.</td><td>not run</td></tr>
+    <tr><td><code>leadership_transfer</code></td><td>503</td><td>Leadership is moving.</td><td>not run</td></tr>
+    <tr><td><code>leader_isolated</code></td><td>503</td><td>The leader lost its quorum and gave up the writes it held.</td><td><strong>unknown</strong></td></tr>
+    <tr><td><code>forward_failed</code></td><td>503</td><td>A forward to the leader broke mid-way.</td><td><strong>unknown</strong></td></tr>
+    <tr><td><code>partition_moving</code>, <code>partition_moved</code></td><td>503</td><td>The partition is moving or has moved; retry after <code>Retry-After</code>.</td><td>not run</td></tr>
+    <tr><td><code>partition_retired</code></td><td>410</td><td>The partition no longer exists.</td><td>not run</td></tr>
+    <tr><td><code>transaction_prepared</code>, <code>transaction_conflict</code></td><td>—</td><td>A database is held by another cross-group transaction's prepare.</td><td>not run</td></tr>
+    <tr><td><code>membership</code>, <code>transfer_failed</code></td><td>409</td><td>A membership change or leadership transfer was refused or uncertain.</td><td>—</td></tr>
+    <tr><td><code>incompatible_store</code></td><td>start-up</td><td>The member's files were written under another compatibility contract; it refuses to start. Restore a backup into a fresh directory.</td><td>—</td></tr>
+    <tr><td><code>unavailable</code></td><td>503</td><td>The server is not configured for this (backups, a group it does not host).</td><td>—</td></tr>
+  </tbody>
+</table>
+
+<h2 id="crypto">Cryptography</h2>
+
+<table>
+  <thead><tr><th>Code</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td><code>CRYPTO_ERROR</code></td><td>A rejected token or signature, a failed decryption, a malformed key, a failed WebAuthn check.</td></tr>
+    <tr><td><code>UNKNOWN_KEY</code>, <code>UNKNOWN_VERSION</code></td><td>The alias is not bound in this database's catalog; the version does not exist.</td></tr>
+    <tr><td><code>FORBIDDEN_USAGE</code></td><td>The module did not declare the key, or the binding does not grant the usage.</td></tr>
+    <tr><td><code>BAD_SIGNATURE</code></td><td>Malformed signature bytes.</td></tr>
+    <tr><td><code>KEYS_LOCKED</code></td><td>The member has no wrapping key mounted (<code>--key-wrapping-file</code>), so it serves no catalog key; operator key changes sent to it answer 503 with this code: retry once a member that has the key leads.</td></tr>
+    <tr><td><code>KEY_REVOKED</code>, <code>KEY_DESTROYED</code></td><td>The key version was revoked or destroyed.</td></tr>
+    <tr><td><code>WEBAUTHN_COUNTER</code></td><td>A passkey's signature counter did not increase.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="limits">Limits</h2>
+
+<table>
+  <thead><tr><th>Limit</th><th>Value</th><th>Set by</th></tr></thead>
+  <tbody>
+    <tr><td>Deadline per call</td><td>the method's <code>timeout</code>, else 5 s; at most 60 s</td><td><code>timeout</code> option; <code>--guest-timeout-ms</code>, <code>--guest-max-timeout-ms</code></td></tr>
+    <tr><td>Caller's deadline</td><td>at most one day; only shortens</td><td><code>x-flower-timeout-ms</code></td></tr>
+    <tr><td>Transaction deadline</td><td>60 s for client-planned steps</td><td>a planner's declaration</td></tr>
+    <tr><td>Committed effects per write or transaction</td><td>32 MiB</td><td><code>--max-transaction-bytes</code></td></tr>
+    <tr><td>Memory per instance / per invocation</td><td>128 MiB / 1 GiB</td><td><code>--guest-memory-bytes</code>, <code>--guest-invocation-memory-bytes</code></td></tr>
+    <tr><td>Nested calls</td><td>32 levels</td><td></td></tr>
+    <tr><td>Derived evaluation nesting</td><td>16 levels</td><td></td></tr>
+    <tr><td>Value nesting depth</td><td>128</td><td></td></tr>
+    <tr><td>Integers (<code>i64</code>, <code>u64</code>)</td><td>±(2<sup>53</sup> − 1)</td><td>use <code>DecimalI64</code>/<code>DecimalU64</code> beyond</td></tr>
+    <tr><td>Call request body (watches included)</td><td>2 MiB</td><td></td></tr>
+    <tr><td>Deployment request body</td><td>64 MiB</td><td><code>--deploy-max-bytes</code></td></tr>
+    <tr><td>Transaction steps</td><td>at least one, one per database</td><td></td></tr>
+    <tr><td>Trigger and cascade rounds</td><td>16</td><td></td></tr>
+    <tr><td>Watch dependencies before a broad certificate</td><td>4,096</td><td></td></tr>
+    <tr><td>Watch subscriber queue / held arguments and credentials</td><td>32 events / 64 MiB per member</td><td></td></tr>
+    <tr><td>Queue: claims per call / lease / delay</td><td>100 / 1 h / 30 days</td><td></td></tr>
+    <tr><td>Queue: attempts / names, scopes, groups</td><td>1–100 (default 5) / 1,024 bytes</td><td></td></tr>
+    <tr><td>Timer IDs / attempts</td><td>1–128 bytes of text without control characters / 1–100 (default 3)</td><td></td></tr>
+    <tr><td>Random bytes per call</td><td>1,024</td><td></td></tr>
+    <tr><td>Retry window (default)</td><td>24 h, kept 24–27 h</td><td><code>--retry-window-ms</code>, <code>cargo flower retention</code></td></tr>
+    <tr><td>Authorization decision memo</td><td>4 MiB</td><td><code>--decision-memo-bytes</code></td></tr>
+    <tr><td>Access rules</td><td>256 nodes, 32 levels</td><td></td></tr>
+  </tbody>
+</table>
+<!-- /content -->
+      <nav class="page-nav" aria-label="Previous and next">
+        <a class="prev" href="sdk.html" rel="prev">← flower-sdk</a>
+        
+      </nav>
+      <footer class="site-footer">
+        <p><a href="https://github.com/ipsomachina/flower">Flower on GitHub</a> · <a href="../../LICENSE">MIT license</a> · <a href="https://ipsomachina.com/privacy">Privacy &amp; legal notice</a></p>
+        <p>© 2026 <a href="https://ipsomachina.com">Ipso Machina</a> · Avenue de Chamonix 3 · 1207 Genève · Switzerland</p>
+      </footer>
+    </main>
+    <nav class="toc" aria-label="On this page">
+      <h2>On this page</h2>
+      <ul>
+        <li class="depth-2"><a href="#reading-a-failure">Reading a failure</a></li>
+        <li class="depth-2"><a href="#codec-and-call">Codecs and calls</a></li>
+        <li class="depth-2"><a href="#access">Authorization and access</a></li>
+        <li class="depth-2"><a href="#modules">Modules and deployments</a></li>
+        <li class="depth-2"><a href="#budgets">Deadlines and budgets</a></li>
+        <li class="depth-2"><a href="#sql">SQL failures</a></li>
+        <li class="depth-2"><a href="#retries">Retries and receipts</a></li>
+        <li class="depth-2"><a href="#cluster">Cluster and availability</a></li>
+        <li class="depth-2"><a href="#crypto">Cryptography</a></li>
+        <li class="depth-2"><a href="#limits">Limits</a></li>
+      </ul>
+    </nav>
+  </div>
+  </div>
+  <script src="../assets/search-index.js"></script>
+  <script src="../assets/docs.js"></script>
+</body>
+</html>
