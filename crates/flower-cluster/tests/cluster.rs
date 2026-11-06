@@ -1711,6 +1711,7 @@ async fn dials_without_the_token_never_close_established_connections() {
 async fn a_group_keeps_its_leader_while_strangers_flood_its_listeners() {
     use std::sync::atomic::{AtomicBool, Ordering};
 
+    use flower_cluster::network::PeerFactory;
     use flower_cluster::timing::{RaftTiming, SnapshotSettings, TimingSettings, raft_config};
     let timing = RaftTiming::derive(&TimingSettings::default()).unwrap();
     let config = Arc::new(raft_config(&timing, &SnapshotSettings::default()).unwrap());
@@ -1724,12 +1725,15 @@ async fn a_group_keeps_its_leader_while_strangers_flood_its_listeners() {
     };
     let (mut nodes, mut members, mut servers, mut addrs) =
         (Vec::new(), BTreeMap::new(), Vec::new(), Vec::new());
+    let mut transports = Vec::new();
     for id in 1..=3u64 {
+        let network = TcpFactory::new(id, peers.clone());
+        transports.push(network.peers());
         let node = Node::open(
             id,
             &dir.path().join(format!("n{id}")),
             config.clone(),
-            TcpFactory::new(id, peers.clone()),
+            network,
             runtime.clone(),
         )
         .await
@@ -1750,10 +1754,11 @@ async fn a_group_keeps_its_leader_while_strangers_flood_its_listeners() {
     let refs: Vec<&Node> = nodes.iter().collect();
     let leader_id = wait_leader(&refs).await;
     let leader = nodes.iter().find(|node| node.id() == leader_id).unwrap();
-    leader
+    let deployed = leader
         .deploy(b"db", "app", [9u8; 32], b"wasm-v1", &app_manifest())
         .await
-        .unwrap();
+        .unwrap()
+        .position;
     let terms = || {
         nodes
             .iter()
@@ -1763,15 +1768,28 @@ async fn a_group_keeps_its_leader_while_strangers_flood_its_listeners() {
             })
             .collect::<Vec<_>>()
     };
-    for _ in 0..200 {
-        if terms()
-            .iter()
-            .all(|(_, _, leader)| *leader == Some(leader_id))
-        {
-            break;
+    eventually("every member applies the deployment", || async {
+        nodes.iter().all(|node| {
+            let status = node.status();
+            status.leader == Some(leader_id) && status.last_applied.unwrap_or(0) >= deployed
+        })
+    })
+    .await;
+    // The flood intentionally prevents fresh hellos. A committed deploy
+    // only needs a quorum and does not warm the spare connections used
+    // beside replication streams. Establish each shared pool first so
+    // this exercises the survival of established connections.
+    for (source, transport) in transports.iter().enumerate() {
+        for (target, addr) in addrs.iter().enumerate() {
+            if source != target {
+                transport
+                    .info(target as u64 + 1, &addr.to_string(), Duration::from_secs(5))
+                    .await
+                    .unwrap();
+            }
         }
-        tokio::time::sleep(Duration::from_millis(10)).await;
     }
+    leader.raft().ensure_linearizable().await.unwrap();
     let before = terms();
 
     // Every listener sees a new silent dial every 10 ms for three
@@ -1807,7 +1825,13 @@ async fn a_group_keeps_its_leader_while_strangers_flood_its_listeners() {
                 &MutationOptions::default(),
             )
             .await
-            .unwrap_or_else(|error| panic!("write {written} failed: {error}"));
+            .unwrap_or_else(|error| {
+                panic!(
+                    "write {written} failed: {error}; before={before:?}; now={:?}; leader={:?}",
+                    terms(),
+                    leader.raft().metrics().borrow().clone(),
+                )
+            });
         written += 1;
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
