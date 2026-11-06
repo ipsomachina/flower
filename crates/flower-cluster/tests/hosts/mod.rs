@@ -167,18 +167,25 @@ impl Hosts {
     /// Deploy `manifest` of the counter app, as `identity`, to `db` in
     /// the group that owns it.
     pub async fn deploy_with(&self, db: &str, identity: [u8; 32], manifest: &Value) {
-        let group = self.any().fresh_route(db).await.unwrap().unwrap().group;
-        let leader = self.leader_of(&group.name).await;
+        let leader = self.owner(db).await;
         leader
             .deploy(db.as_bytes(), "app", identity, b"wasm", manifest)
             .await
             .unwrap();
     }
 
-    /// The leader of the group that owns `db`, by a fresh catalog.
+    /// The leader of the group that owns `db`, by a fresh catalog. A
+    /// healed partition may still be electing the root's next leader.
     pub async fn owner(&self, db: &str) -> Arc<Node> {
-        let group = self.any().fresh_route(db).await.unwrap().unwrap().group;
-        self.leader_of(&group.name).await
+        for _ in 0..600 {
+            match self.any().fresh_route(db).await {
+                Ok(route) => return self.leader_of(&route.unwrap().group.name).await,
+                Err(NodeError::Forward { .. }) => {}
+                Err(error) => panic!("could not route {db}: {error}"),
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+        panic!("the root never became ready to route {db}");
     }
 
     /// Crash node `id`: its host shuts down at once, its files stay.
