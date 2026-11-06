@@ -5,16 +5,9 @@
 mod common;
 
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output, Stdio};
-use std::time::Duration;
+use std::process::{Output, Stdio};
 
 use sha2::Digest;
-use tokio::io::{AsyncBufReadExt, BufReader};
-
-fn bin() -> &'static str {
-    env!("CARGO_BIN_EXE_cargo-flower")
-}
-
 /// The workspace root.
 fn root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -28,13 +21,11 @@ fn root() -> PathBuf {
 /// Run the CLI from the workspace root, building guests in the shared
 /// wasm target folder, offline.
 fn cli(args: &[&str]) -> Output {
-    Command::new(bin())
+    common::authenticated_command()
         .args(args)
         .current_dir(root())
         .env("CARGO_TARGET_DIR", root().join("target").join("wasm-guest"))
         .env("CARGO_NET_OFFLINE", "true")
-        .env("FLOWER_ADMIN_TOKEN", "secret")
-        .env("FLOWER_WORKER_TOKEN", "secret")
         .stdin(Stdio::null())
         .output()
         .unwrap()
@@ -139,52 +130,18 @@ fn build_writes_inspected_artifacts_and_plan_checks_them() {
 async fn serve(dir: &Path) -> (tokio::process::Child, String) {
     let wrapping = dir.join("wrapping.key");
     common::write_key(&wrapping, &[7u8; 32]);
-    let mut child = tokio::process::Command::new(bin())
-        .args([
-            "serve",
-            "--dir",
-            dir.join("node").to_str().unwrap(),
-            "--id",
-            "1",
-            "--http",
-            "127.0.0.1:0",
-            "--raft",
-            "127.0.0.1:0",
-            "--bootstrap",
-            "1",
-            "--admin-token",
-            "secret",
+    let server = common::Server::start(
+        &dir.join("node"),
+        &[
             "--key-wrapping-file",
             wrapping.to_str().unwrap(),
             "--timer-sweep-ms",
             "3600000",
-        ])
-        .env("FLOWER_WORKER_TOKEN", "secret")
-        .stdout(Stdio::piped())
-        .stderr(Stdio::inherit())
-        .kill_on_drop(true)
-        .spawn()
-        .unwrap();
-    let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
-    let http = tokio::time::timeout(Duration::from_secs(60), async {
-        while let Some(line) = lines.next_line().await.unwrap() {
-            if let Some(addr) = line.strip_prefix("listening http=") {
-                return addr.to_string();
-            }
-        }
-        panic!("serve exited before listening");
-    })
-    .await
-    .unwrap();
-    let endpoint = format!("http://{http}");
-    for _ in 0..200 {
-        let output = cli(&["status", "--endpoint", &endpoint]);
-        if output.status.success() && stdout(&output).contains("leader=Some(1)") {
-            return (child, endpoint);
-        }
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
-    panic!("the node never led");
+        ],
+        &[],
+    )
+    .await;
+    (server.child, server.endpoint)
 }
 
 /// Call the crypto example, returning its printed value.

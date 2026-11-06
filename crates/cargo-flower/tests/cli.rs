@@ -4,18 +4,14 @@
 
 mod common;
 
-use std::process::{Command, Stdio};
+use std::process::Command;
 use std::time::Duration;
 
-use tokio::io::{AsyncBufReadExt, BufReader};
+use common::{Server as Booted, bin};
 
 // Each process test compiles Wasm in its own server. Running them
 // together on CI can exhaust the client's deployment timeout.
 static SERVER_TEST: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
-
-fn bin() -> String {
-    env!("CARGO_BIN_EXE_cargo-flower").to_string()
-}
 
 fn manifest_v1() -> serde_json::Value {
     serde_json::json!({
@@ -85,9 +81,7 @@ fn write(dir: &std::path::Path, name: &str, value: &serde_json::Value) -> String
 fn contract_inspect_prints_summary() {
     let dir = tempfile::tempdir().unwrap();
     let manifest = write(dir.path(), "v1.json", &manifest_v1());
-    let output = Command::new(bin())
-        .env("FLOWER_WORKER_TOKEN", "secret")
-        .env("FLOWER_ADMIN_TOKEN", "secret")
+    let output = common::authenticated_command()
         .args(["contract", "inspect", "--manifest", &manifest])
         .output()
         .unwrap();
@@ -105,9 +99,7 @@ fn contract_inspect_rejects_garbage() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("bad.json");
     std::fs::write(&path, b"{\"collections\": 42}").unwrap();
-    let output = Command::new(bin())
-        .env("FLOWER_WORKER_TOKEN", "secret")
-        .env("FLOWER_ADMIN_TOKEN", "secret")
+    let output = common::authenticated_command()
         .args(["contract", "inspect", "--manifest", path.to_str().unwrap()])
         .output()
         .unwrap();
@@ -119,9 +111,7 @@ fn contract_diff_flags_changes() {
     let dir = tempfile::tempdir().unwrap();
     let from = write(dir.path(), "v1.json", &manifest_v1());
     let to = write(dir.path(), "v2.json", &manifest_v2());
-    let output = Command::new(bin())
-        .env("FLOWER_WORKER_TOKEN", "secret")
-        .env("FLOWER_ADMIN_TOKEN", "secret")
+    let output = common::authenticated_command()
         .args(["contract", "diff", "--from", &from, "--to", &to])
         .output()
         .unwrap();
@@ -130,9 +120,7 @@ fn contract_diff_flags_changes() {
     assert!(text.contains("+ collection posts"));
     assert!(text.contains("! definition get removed"));
 
-    let output = Command::new(bin())
-        .env("FLOWER_WORKER_TOKEN", "secret")
-        .env("FLOWER_ADMIN_TOKEN", "secret")
+    let output = common::authenticated_command()
         .args(["contract", "diff", "--from", &to, "--to", &from])
         .output()
         .unwrap();
@@ -271,81 +259,9 @@ fn wrapping_key(dir: &std::path::Path) -> String {
     path.to_str().unwrap().to_string()
 }
 
-/// A booted single node plus its HTTP endpoint.
-struct Booted {
-    child: tokio::process::Child,
-    endpoint: String,
-}
-
-/// Boot a single node with the given sweep interval and wait for
-/// it to elect itself leader.
+/// Boot a single node with the given timer sweep interval.
 async fn boot(dir: &std::path::Path, node: &str, timer_sweep_ms: &str) -> Booted {
-    let node_dir = dir.join(node);
-    let wrapping = wrapping_key(dir);
-    let mut child = tokio::process::Command::new(bin())
-        .env("FLOWER_WORKER_TOKEN", "secret")
-        .env("FLOWER_ADMIN_TOKEN", "secret")
-        .args([
-            "serve",
-            "--dir",
-            node_dir.to_str().unwrap(),
-            "--id",
-            "1",
-            "--http",
-            "127.0.0.1:0",
-            "--raft",
-            "127.0.0.1:0",
-            "--bootstrap",
-            "1",
-            "--admin-token",
-            "secret",
-            "--key-wrapping-file",
-            &wrapping,
-            "--timer-sweep-ms",
-            timer_sweep_ms,
-        ])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::inherit())
-        .kill_on_drop(true)
-        .spawn()
-        .unwrap();
-    let stdout = child.stdout.take().unwrap();
-    let mut lines = BufReader::new(stdout).lines();
-    let _raft = wait_listening(&mut lines, "raft").await;
-    let http = wait_listening(&mut lines, "http").await;
-    let endpoint = format!("http://{http}");
-    for _ in 0..100 {
-        let output = Command::new(bin())
-            .env("FLOWER_WORKER_TOKEN", "secret")
-            .env("FLOWER_ADMIN_TOKEN", "secret")
-            .args(["status", "--endpoint", &endpoint])
-            .output()
-            .unwrap();
-        let text = String::from_utf8(output.stdout).unwrap();
-        if output.status.success() && text.contains("id=1") && text.contains("leader=Some(1)") {
-            return Booted { child, endpoint };
-        }
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
-    panic!("single node never elected itself");
-}
-
-/// Wait for a `listening {name}={addr}` line.
-async fn wait_listening(
-    lines: &mut tokio::io::Lines<BufReader<tokio::process::ChildStdout>>,
-    name: &str,
-) -> String {
-    let prefix = format!("listening {name}=");
-    tokio::time::timeout(Duration::from_secs(30), async {
-        while let Some(line) = lines.next_line().await.unwrap() {
-            if let Some(addr) = line.strip_prefix(&prefix) {
-                return addr.to_string();
-            }
-        }
-        panic!("serve exited without {name}");
-    })
-    .await
-    .unwrap()
+    serve_node(&dir.join(node), &["--timer-sweep-ms", timer_sweep_ms]).await
 }
 
 /// `cargo-flower` with the admin token, as an operator runs it.
@@ -493,66 +409,23 @@ async fn serve_roundtrip() {
     let broken_path = dir.path().join("broken.wasm");
     std::fs::write(&broken_path, STUB_WASM).unwrap();
     let broken = broken_path.to_str().unwrap().to_string();
-    let wrapping = wrapping_key(dir.path());
-
-    let mut child = tokio::process::Command::new(bin())
-        .env("FLOWER_WORKER_TOKEN", "secret")
-        .env("FLOWER_ADMIN_TOKEN", "secret")
-        .args([
-            "serve",
-            "--dir",
-            node_dir.to_str().unwrap(),
-            "--id",
-            "1",
-            "--http",
-            "127.0.0.1:0",
-            "--raft",
-            "127.0.0.1:0",
-            "--bootstrap",
-            "1",
-            "--admin-token",
-            "secret",
-            "--key-wrapping-file",
-            &wrapping,
+    let Booted {
+        mut child,
+        endpoint,
+    } = serve_node(
+        &node_dir,
+        &[
             "--query-cache-bytes",
             "4194304",
             "--query-flight-bytes",
             "262144",
             "--decision-memo-bytes",
             "2097152",
-        ])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::inherit())
-        .kill_on_drop(true)
-        .spawn()
-        .unwrap();
-    let stdout = child.stdout.take().unwrap();
-    let mut lines = BufReader::new(stdout).lines();
-    let _raft = wait_listening(&mut lines, "raft").await;
-    let http = wait_listening(&mut lines, "http").await;
-    let endpoint = format!("http://{http}");
+        ],
+    )
+    .await;
 
-    // Wait for election before deploying.
-    let mut leader = false;
-    for _ in 0..100 {
-        let output = Command::new(bin())
-            .env("FLOWER_WORKER_TOKEN", "secret")
-            .env("FLOWER_ADMIN_TOKEN", "secret")
-            .args(["status", "--endpoint", &endpoint])
-            .output()
-            .unwrap();
-        let text = String::from_utf8(output.stdout).unwrap();
-        if output.status.success() && text.contains("id=1") && text.contains("leader=Some(1)") {
-            leader = true;
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
-    assert!(leader, "single node never elected itself");
-
-    let output = Command::new(bin())
-        .env("FLOWER_WORKER_TOKEN", "secret")
-        .env("FLOWER_ADMIN_TOKEN", "secret")
+    let output = common::authenticated_command()
         .args([
             "deploy",
             "--endpoint",
@@ -579,9 +452,7 @@ async fn serve_roundtrip() {
     assert!(text.contains("position="));
 
     // Real guest calls through the served node: mutate then query.
-    let output = Command::new(bin())
-        .env("FLOWER_WORKER_TOKEN", "secret")
-        .env("FLOWER_ADMIN_TOKEN", "secret")
+    let output = common::authenticated_command()
         .args([
             "call",
             "--endpoint",
@@ -601,9 +472,7 @@ async fn serve_roundtrip() {
     assert!(output.status.success());
     assert!(String::from_utf8(output.stdout).unwrap().contains("put-ok"));
 
-    let output = Command::new(bin())
-        .env("FLOWER_WORKER_TOKEN", "secret")
-        .env("FLOWER_ADMIN_TOKEN", "secret")
+    let output = common::authenticated_command()
         .args([
             "call",
             "--endpoint",
@@ -721,9 +590,7 @@ async fn serve_roundtrip() {
             String::from_utf8_lossy(&output.stderr)
         );
     }
-    let output = Command::new(bin())
-        .env("FLOWER_WORKER_TOKEN", "secret")
-        .env("FLOWER_ADMIN_TOKEN", "secret")
+    let output = common::authenticated_command()
         .args([
             "call",
             "--endpoint",
@@ -748,9 +615,7 @@ async fn serve_roundtrip() {
     // The stub guest cannot execute: registration validates its ABI, so
     // the deploy fails cleanly and calls find no module, rather than the
     // first call discovering the broken guest.
-    let output = Command::new(bin())
-        .env("FLOWER_WORKER_TOKEN", "secret")
-        .env("FLOWER_ADMIN_TOKEN", "secret")
+    let output = common::authenticated_command()
         .args([
             "deploy",
             "--endpoint",
@@ -770,9 +635,7 @@ async fn serve_roundtrip() {
         .unwrap();
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("invalid_module"));
-    let output = Command::new(bin())
-        .env("FLOWER_WORKER_TOKEN", "secret")
-        .env("FLOWER_ADMIN_TOKEN", "secret")
+    let output = common::authenticated_command()
         .args([
             "call",
             "--endpoint",
@@ -790,9 +653,7 @@ async fn serve_roundtrip() {
         .unwrap();
     assert!(!output.status.success());
 
-    let output = Command::new(bin())
-        .env("FLOWER_WORKER_TOKEN", "secret")
-        .env("FLOWER_ADMIN_TOKEN", "secret")
+    let output = common::authenticated_command()
         .args([
             "membership",
             "--endpoint",
@@ -811,9 +672,7 @@ async fn serve_roundtrip() {
     );
 
     // No backup driver is configured on this node.
-    let output = Command::new(bin())
-        .env("FLOWER_WORKER_TOKEN", "secret")
-        .env("FLOWER_ADMIN_TOKEN", "secret")
+    let output = common::authenticated_command()
         .args(["backup", "--endpoint", &endpoint, "--admin-token", "secret"])
         .output()
         .unwrap();
@@ -831,59 +690,12 @@ async fn queue_lifecycle() {
     let wasm_path = dir.path().join("app.wasm");
     std::fs::write(&wasm_path, guest_wasm()).unwrap();
     let wasm = wasm_path.to_str().unwrap().to_string();
-    let wrapping = wrapping_key(dir.path());
+    let Booted {
+        mut child,
+        endpoint,
+    } = serve_node(&node_dir, &[]).await;
 
-    let mut child = tokio::process::Command::new(bin())
-        .env("FLOWER_WORKER_TOKEN", "secret")
-        .env("FLOWER_ADMIN_TOKEN", "secret")
-        .args([
-            "serve",
-            "--dir",
-            node_dir.to_str().unwrap(),
-            "--id",
-            "1",
-            "--http",
-            "127.0.0.1:0",
-            "--raft",
-            "127.0.0.1:0",
-            "--bootstrap",
-            "1",
-            "--admin-token",
-            "secret",
-            "--key-wrapping-file",
-            &wrapping,
-        ])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::inherit())
-        .kill_on_drop(true)
-        .spawn()
-        .unwrap();
-    let stdout = child.stdout.take().unwrap();
-    let mut lines = BufReader::new(stdout).lines();
-    let _raft = wait_listening(&mut lines, "raft").await;
-    let http = wait_listening(&mut lines, "http").await;
-    let endpoint = format!("http://{http}");
-
-    let mut leader = false;
-    for _ in 0..100 {
-        let output = Command::new(bin())
-            .env("FLOWER_WORKER_TOKEN", "secret")
-            .env("FLOWER_ADMIN_TOKEN", "secret")
-            .args(["status", "--endpoint", &endpoint])
-            .output()
-            .unwrap();
-        let text = String::from_utf8(output.stdout).unwrap();
-        if output.status.success() && text.contains("id=1") && text.contains("leader=Some(1)") {
-            leader = true;
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
-    assert!(leader, "single node never elected itself");
-
-    let output = Command::new(bin())
-        .env("FLOWER_WORKER_TOKEN", "secret")
-        .env("FLOWER_ADMIN_TOKEN", "secret")
+    let output = common::authenticated_command()
         .args([
             "deploy",
             "--endpoint",
@@ -904,9 +716,7 @@ async fn queue_lifecycle() {
     assert!(output.status.success());
 
     // A guest mutation enqueues one email.
-    let output = Command::new(bin())
-        .env("FLOWER_WORKER_TOKEN", "secret")
-        .env("FLOWER_ADMIN_TOKEN", "secret")
+    let output = common::authenticated_command()
         .args([
             "call",
             "--endpoint",
@@ -929,9 +739,7 @@ async fn queue_lifecycle() {
     assert_eq!(enqueued.len(), 32);
 
     // Stats, peek and poll see the pending item.
-    let output = Command::new(bin())
-        .env("FLOWER_WORKER_TOKEN", "secret")
-        .env("FLOWER_ADMIN_TOKEN", "secret")
+    let output = common::authenticated_command()
         .args([
             "queue",
             "--endpoint",
@@ -948,9 +756,7 @@ async fn queue_lifecycle() {
     let text = String::from_utf8(output.stdout).unwrap();
     assert!(text.contains("pending=1"), "{text}");
 
-    let output = Command::new(bin())
-        .env("FLOWER_WORKER_TOKEN", "secret")
-        .env("FLOWER_ADMIN_TOKEN", "secret")
+    let output = common::authenticated_command()
         .args([
             "queue",
             "--endpoint",
@@ -970,9 +776,7 @@ async fn queue_lifecycle() {
     assert!(text.contains("ops@example.com"), "{text}");
     assert!(text.contains("\"pending\""), "{text}");
 
-    let output = Command::new(bin())
-        .env("FLOWER_WORKER_TOKEN", "secret")
-        .env("FLOWER_ADMIN_TOKEN", "secret")
+    let output = common::authenticated_command()
         .args([
             "queue",
             "--endpoint",
@@ -994,9 +798,7 @@ async fn queue_lifecycle() {
     let token = claim["token"].as_str().unwrap().to_string();
 
     // Heartbeat, complete and the drained stats.
-    let output = Command::new(bin())
-        .env("FLOWER_WORKER_TOKEN", "secret")
-        .env("FLOWER_ADMIN_TOKEN", "secret")
+    let output = common::authenticated_command()
         .args([
             "queue",
             "--endpoint",
@@ -1015,9 +817,7 @@ async fn queue_lifecycle() {
         .unwrap();
     assert!(output.status.success());
 
-    let output = Command::new(bin())
-        .env("FLOWER_WORKER_TOKEN", "secret")
-        .env("FLOWER_ADMIN_TOKEN", "secret")
+    let output = common::authenticated_command()
         .args([
             "queue",
             "--endpoint",
@@ -1036,9 +836,7 @@ async fn queue_lifecycle() {
         .unwrap();
     assert!(output.status.success());
 
-    let output = Command::new(bin())
-        .env("FLOWER_WORKER_TOKEN", "secret")
-        .env("FLOWER_ADMIN_TOKEN", "secret")
+    let output = common::authenticated_command()
         .args([
             "queue",
             "--endpoint",
@@ -1056,9 +854,7 @@ async fn queue_lifecycle() {
     assert!(text.contains("claimed=0"), "{text}");
 
     // Double completion fails; peeking the gone item fails too.
-    let output = Command::new(bin())
-        .env("FLOWER_WORKER_TOKEN", "secret")
-        .env("FLOWER_ADMIN_TOKEN", "secret")
+    let output = common::authenticated_command()
         .args([
             "queue",
             "--endpoint",
@@ -1077,9 +873,7 @@ async fn queue_lifecycle() {
         .unwrap();
     assert!(!output.status.success());
 
-    let output = Command::new(bin())
-        .env("FLOWER_WORKER_TOKEN", "secret")
-        .env("FLOWER_ADMIN_TOKEN", "secret")
+    let output = common::authenticated_command()
         .args([
             "queue",
             "--endpoint",
@@ -1110,9 +904,7 @@ async fn timer_inspect_maintain() {
     std::fs::write(&wasm_path, guest_wasm()).unwrap();
     let wasm = wasm_path.to_str().unwrap().to_string();
 
-    let output = Command::new(bin())
-        .env("FLOWER_WORKER_TOKEN", "secret")
-        .env("FLOWER_ADMIN_TOKEN", "secret")
+    let output = common::authenticated_command()
         .args([
             "deploy",
             "--endpoint",
@@ -1135,9 +927,7 @@ async fn timer_inspect_maintain() {
     // A guest mutation schedules two reminders; the hourly sweep
     // never fires during the test.
     for (id, delay) in [("soon", "0"), ("later", "3600000")] {
-        let output = Command::new(bin())
-            .env("FLOWER_WORKER_TOKEN", "secret")
-            .env("FLOWER_ADMIN_TOKEN", "secret")
+        let output = common::authenticated_command()
             .args([
                 "call",
                 "--endpoint",
@@ -1159,18 +949,14 @@ async fn timer_inspect_maintain() {
         assert!(output.status.success());
     }
 
-    let output = Command::new(bin())
-        .env("FLOWER_WORKER_TOKEN", "secret")
-        .env("FLOWER_ADMIN_TOKEN", "secret")
+    let output = common::authenticated_command()
         .args(["timer", "--endpoint", &endpoint, "--db", "db", "stats"])
         .output()
         .unwrap();
     let text = String::from_utf8(output.stdout).unwrap();
     assert!(text.contains("pending=2"), "{text}");
 
-    let output = Command::new(bin())
-        .env("FLOWER_WORKER_TOKEN", "secret")
-        .env("FLOWER_ADMIN_TOKEN", "secret")
+    let output = common::authenticated_command()
         .args([
             "timer",
             "--endpoint",
@@ -1187,9 +973,7 @@ async fn timer_inspect_maintain() {
     assert!(text.contains("\"pending\""), "{text}");
     assert!(text.contains("send_email"), "{text}");
 
-    let output = Command::new(bin())
-        .env("FLOWER_WORKER_TOKEN", "secret")
-        .env("FLOWER_ADMIN_TOKEN", "secret")
+    let output = common::authenticated_command()
         .args(["timer", "--endpoint", &endpoint, "--db", "db", "list"])
         .output()
         .unwrap();
@@ -1198,9 +982,7 @@ async fn timer_inspect_maintain() {
     assert_eq!(lines.len(), 2);
     assert!(lines[0].contains("\"soon\""), "{text}");
 
-    let output = Command::new(bin())
-        .env("FLOWER_WORKER_TOKEN", "secret")
-        .env("FLOWER_ADMIN_TOKEN", "secret")
+    let output = common::authenticated_command()
         .args([
             "timer",
             "--endpoint",
@@ -1216,9 +998,7 @@ async fn timer_inspect_maintain() {
     let text = String::from_utf8(output.stdout).unwrap();
     assert!(text.contains("removed=true"), "{text}");
 
-    let output = Command::new(bin())
-        .env("FLOWER_WORKER_TOKEN", "secret")
-        .env("FLOWER_ADMIN_TOKEN", "secret")
+    let output = common::authenticated_command()
         .args([
             "timer",
             "--endpoint",
@@ -1248,9 +1028,7 @@ async fn transaction_runs_live() {
     let wasm = wasm_path.to_str().unwrap().to_string();
 
     for db in ["dba", "dbb"] {
-        let output = Command::new(bin())
-            .env("FLOWER_WORKER_TOKEN", "secret")
-            .env("FLOWER_ADMIN_TOKEN", "secret")
+        let output = common::authenticated_command()
             .args([
                 "deploy",
                 "--endpoint",
@@ -1281,9 +1059,7 @@ async fn transaction_runs_live() {
         {"db": "dbb", "module": "app", "method": "put",
          "args": {"key": "\"b\"", "title": "second"}},
     ]);
-    let output = Command::new(bin())
-        .env("FLOWER_WORKER_TOKEN", "secret")
-        .env("FLOWER_ADMIN_TOKEN", "secret")
+    let output = common::authenticated_command()
         .args([
             "transaction",
             "--endpoint",
@@ -1300,9 +1076,7 @@ async fn transaction_runs_live() {
     assert!(text.contains("\"dbb\":1"), "{text}");
 
     for (db, key, title) in [("dba", "a", "first"), ("dbb", "b", "second")] {
-        let output = Command::new(bin())
-            .env("FLOWER_WORKER_TOKEN", "secret")
-            .env("FLOWER_ADMIN_TOKEN", "secret")
+        let output = common::authenticated_command()
             .args([
                 "call",
                 "--endpoint",
@@ -1337,9 +1111,7 @@ async fn timer_sweep_fires() {
     std::fs::write(&wasm_path, guest_wasm()).unwrap();
     let wasm = wasm_path.to_str().unwrap().to_string();
 
-    let output = Command::new(bin())
-        .env("FLOWER_WORKER_TOKEN", "secret")
-        .env("FLOWER_ADMIN_TOKEN", "secret")
+    let output = common::authenticated_command()
         .args([
             "deploy",
             "--endpoint",
@@ -1359,9 +1131,7 @@ async fn timer_sweep_fires() {
         .unwrap();
     assert!(output.status.success());
 
-    let output = Command::new(bin())
-        .env("FLOWER_WORKER_TOKEN", "secret")
-        .env("FLOWER_ADMIN_TOKEN", "secret")
+    let output = common::authenticated_command()
         .args([
             "call",
             "--endpoint",
@@ -1384,9 +1154,7 @@ async fn timer_sweep_fires() {
     // lands in the queue within seconds.
     let mut found = false;
     for _ in 0..300 {
-        let output = Command::new(bin())
-            .env("FLOWER_WORKER_TOKEN", "secret")
-            .env("FLOWER_ADMIN_TOKEN", "secret")
+        let output = common::authenticated_command()
             .args([
                 "queue",
                 "--endpoint",
@@ -1410,9 +1178,7 @@ async fn timer_sweep_fires() {
     }
     assert!(found, "sweep never fired the due timer");
 
-    let output = Command::new(bin())
-        .env("FLOWER_WORKER_TOKEN", "secret")
-        .env("FLOWER_ADMIN_TOKEN", "secret")
+    let output = common::authenticated_command()
         .args(["timer", "--endpoint", &endpoint, "--db", "db", "stats"])
         .output()
         .unwrap();
@@ -1446,51 +1212,12 @@ async fn serve_member(
     envs: &[(&str, &str)],
 ) -> Booted {
     let wrapping = wrapping_key(node_dir.parent().unwrap());
-    let mut args = vec![
-        "serve",
-        "--dir",
-        node_dir.to_str().unwrap(),
-        "--id",
-        "1",
-        "--http",
-        "127.0.0.1:0",
-        "--raft",
-        "127.0.0.1:0",
-        "--bootstrap",
-        "1",
-        "--admin-token",
-        "secret",
-    ];
+    let mut args = Vec::new();
     if keyed {
-        args.extend(["--key-wrapping-file", &wrapping]);
+        args.extend(["--key-wrapping-file", wrapping.as_str()]);
     }
     args.extend_from_slice(extra);
-    let mut child = tokio::process::Command::new(bin())
-        .env("FLOWER_ADMIN_TOKEN", "secret")
-        .envs(envs.iter().copied())
-        .args(&args)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::inherit())
-        .kill_on_drop(true)
-        .spawn()
-        .unwrap();
-    let stdout = child.stdout.take().unwrap();
-    let mut lines = BufReader::new(stdout).lines();
-    let _raft = wait_listening(&mut lines, "raft").await;
-    let http = wait_listening(&mut lines, "http").await;
-    let endpoint = format!("http://{http}");
-    for _ in 0..100 {
-        let output = Command::new(bin())
-            .args(["status", "--endpoint", &endpoint])
-            .output()
-            .unwrap();
-        let text = String::from_utf8(output.stdout).unwrap();
-        if output.status.success() && text.contains("leader=Some(1)") {
-            return Booted { child, endpoint };
-        }
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
-    panic!("node never elected itself");
+    Booted::start(node_dir, &args, envs).await
 }
 
 /// A member without a wrapping key builds its guests with a crypto host

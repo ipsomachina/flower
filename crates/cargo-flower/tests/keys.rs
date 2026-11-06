@@ -6,34 +6,12 @@
 
 mod common;
 
-use std::process::{Command, Stdio};
+use std::process::Command;
 use std::time::Duration;
 
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-fn bin() -> String {
-    env!("CARGO_BIN_EXE_cargo-flower").to_string()
-}
-
-fn serve_args<'a>(dir: &'a str, wrapping: &'a str) -> Vec<&'a str> {
-    vec![
-        "serve",
-        "--dir",
-        dir,
-        "--id",
-        "1",
-        "--http",
-        "127.0.0.1:0",
-        "--raft",
-        "127.0.0.1:0",
-        "--bootstrap",
-        "1",
-        "--admin-token",
-        "secret",
-        "--key-wrapping-file",
-        wrapping,
-    ]
-}
+use common::bin;
 
 /// POST JSON over plain HTTP/1.1, returning the status and body.
 async fn post(addr: &str, path: &str, body: &str) -> (u16, String) {
@@ -63,11 +41,9 @@ async fn serve_seals_catalog_keys_under_the_mounted_wrapping_key() {
     // A key file that is not 32 bytes refuses to boot.
     let short = dir.path().join("short.key");
     common::write_key(&short, &[1u8; 16]);
-    let refused = Command::new(bin())
-        .args(serve_args(
-            dir.path().join("refused").to_str().unwrap(),
-            short.to_str().unwrap(),
-        ))
+    let refused = common::serve_command(&dir.path().join("refused"))
+        .arg("--key-wrapping-file")
+        .arg(&short)
         .output()
         .unwrap();
     assert!(!refused.status.success());
@@ -77,32 +53,21 @@ async fn serve_seals_catalog_keys_under_the_mounted_wrapping_key() {
     let wrapping = dir.path().join("wrapping.key");
     common::write_key(&wrapping, &[6u8; 32]);
     let node_dir = dir.path().join("node");
-    let mut child = tokio::process::Command::new(bin())
-        .args(serve_args(
-            node_dir.to_str().unwrap(),
-            wrapping.to_str().unwrap(),
-        ))
-        .stdout(Stdio::piped())
-        .stderr(Stdio::inherit())
-        .kill_on_drop(true)
-        .spawn()
-        .unwrap();
-    let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
-    let http = tokio::time::timeout(Duration::from_secs(60), async {
-        while let Some(line) = lines.next_line().await.unwrap() {
-            if let Some(addr) = line.strip_prefix("listening http=") {
-                return addr.to_string();
-            }
-        }
-        panic!("serve exited before listening");
-    })
-    .await
-    .unwrap();
+    let common::Server {
+        mut child,
+        endpoint,
+    } = common::Server::start(
+        &node_dir,
+        &["--key-wrapping-file", wrapping.to_str().unwrap()],
+        &[],
+    )
+    .await;
+    let http = endpoint.strip_prefix("http://").unwrap();
 
     let generate = r#"{"db":"db","operation":"generate","requestId":"g","name":"signing","algorithm":"Ed25519"}"#;
     let mut response = (0, String::new());
     for _ in 0..200 {
-        response = post(&http, "/v1/admin/keys", generate).await;
+        response = post(http, "/v1/admin/keys", generate).await;
         if response.0 == 200 {
             break;
         }
@@ -119,7 +84,7 @@ async fn serve_seals_catalog_keys_under_the_mounted_wrapping_key() {
     // A request that names no database is refused: every database
     // keeps a catalog of its own.
     let unnamed = post(
-        &http,
+        http,
         "/v1/admin/keys",
         r#"{"operation":"generate","requestId":"g","name":"signing","algorithm":"Ed25519"}"#,
     )
@@ -127,7 +92,6 @@ async fn serve_seals_catalog_keys_under_the_mounted_wrapping_key() {
     assert_eq!(unnamed.0, 400, "{}", unnamed.1);
 
     // The same catalog through `cargo flower keys`.
-    let endpoint = format!("http://{http}");
     let keys = |args: &[&str]| {
         let mut command = vec![
             "keys",
