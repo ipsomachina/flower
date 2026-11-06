@@ -70,6 +70,9 @@ jobs:
           # Isolate Windows timing tests from competing test clusters.
           if [[ "$RUNNER_OS" == Windows ]]; then
             export RUST_TEST_THREADS=1
+            # Keep fsync-heavy test databases on the runner's work disk;
+            # Windows otherwise puts temporary files on the slower OS disk.
+            export TMP="$RUNNER_TEMP" TEMP="$RUNNER_TEMP"
           fi
           cargo test --locked --workspace --features flower-client/replica,flower-client/conformance,flower-backup/s3
 
