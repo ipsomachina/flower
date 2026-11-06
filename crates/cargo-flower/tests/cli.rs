@@ -9,6 +9,10 @@ use std::time::Duration;
 
 use tokio::io::{AsyncBufReadExt, BufReader};
 
+// Each process test compiles Wasm in its own server. Running them
+// together on CI can exhaust the client's deployment timeout.
+static SERVER_TEST: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 fn bin() -> String {
     env!("CARGO_BIN_EXE_cargo-flower").to_string()
 }
@@ -359,6 +363,7 @@ fn admin(args: &[&str]) -> std::process::Output {
 /// an unknown one is refused.
 #[tokio::test]
 async fn groups_partitions_and_moves_from_the_command_line() {
+    let _turn = SERVER_TEST.lock().await;
     let dir = tempfile::tempdir().unwrap();
     let booted = boot(dir.path(), "node", "3600000").await;
     let endpoint = booted.endpoint.as_str();
@@ -476,6 +481,7 @@ async fn groups_partitions_and_moves_from_the_command_line() {
 
 #[tokio::test]
 async fn serve_roundtrip() {
+    let _turn = SERVER_TEST.lock().await;
     let dir = tempfile::tempdir().unwrap();
     let node_dir = dir.path().join("node");
     let mut declared = exposed(manifest_v1());
@@ -818,6 +824,7 @@ async fn serve_roundtrip() {
 
 #[tokio::test]
 async fn queue_lifecycle() {
+    let _turn = SERVER_TEST.lock().await;
     let dir = tempfile::tempdir().unwrap();
     let node_dir = dir.path().join("node");
     let manifest = write(dir.path(), "app.json", &exposed(manifest_queue()));
@@ -1094,6 +1101,7 @@ async fn queue_lifecycle() {
 
 #[tokio::test]
 async fn timer_inspect_maintain() {
+    let _turn = SERVER_TEST.lock().await;
     let dir = tempfile::tempdir().unwrap();
     let mut booted = boot(dir.path(), "node", "3600000").await;
     let endpoint = booted.endpoint.clone();
@@ -1230,6 +1238,7 @@ async fn timer_inspect_maintain() {
 
 #[tokio::test]
 async fn transaction_runs_live() {
+    let _turn = SERVER_TEST.lock().await;
     let dir = tempfile::tempdir().unwrap();
     let mut booted = boot(dir.path(), "node", "3600000").await;
     let endpoint = booted.endpoint.clone();
@@ -1319,6 +1328,7 @@ async fn transaction_runs_live() {
 
 #[tokio::test]
 async fn timer_sweep_fires() {
+    let _turn = SERVER_TEST.lock().await;
     let dir = tempfile::tempdir().unwrap();
     let mut booted = boot(dir.path(), "node", "100").await;
     let endpoint = booted.endpoint.clone();
@@ -1491,6 +1501,7 @@ async fn serve_member(
 /// failures rather than traps.
 #[tokio::test]
 async fn a_member_without_a_wrapping_key_validates_and_runs_guests_alike() {
+    let _turn = SERVER_TEST.lock().await;
     let dir = tempfile::tempdir().unwrap();
     let booted = serve_member(&dir.path().join("node"), false, &[], &[]).await;
     let endpoint = booted.endpoint.clone();
@@ -1603,6 +1614,7 @@ fn field<'a>(line: &'a str, name: &str) -> &'a str {
 
 #[tokio::test]
 async fn serve_backs_up_continuously_and_restores_by_index() {
+    let _turn = SERVER_TEST.lock().await;
     let dir = tempfile::tempdir().unwrap();
     let backups = dir.path().join("backups");
     backs_up_continuously_and_restores_by_index(&["--backup-dir", backups.to_str().unwrap()], &[])
@@ -1614,6 +1626,7 @@ async fn serve_backs_up_continuously_and_restores_by_index() {
 /// `backup restore` read it back from there.
 #[tokio::test(flavor = "multi_thread")]
 async fn serve_backs_up_continuously_to_s3_and_restores_by_index() {
+    let _turn = SERVER_TEST.lock().await;
     let root = tempfile::tempdir().unwrap();
     let endpoint = serve_s3(root.path()).await;
     let envs = [
@@ -1861,6 +1874,7 @@ fn retry_cli(args: &[&str]) -> (bool, String, String) {
 /// then refuses new results.
 #[tokio::test]
 async fn retry_sessions_from_the_command_line() {
+    let _turn = SERVER_TEST.lock().await;
     let dir = tempfile::tempdir().unwrap();
     let mut booted = serve_node(&dir.path().join("node"), &[]).await;
     let endpoint = booted.endpoint.clone();
