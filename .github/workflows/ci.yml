@@ -65,7 +65,13 @@ jobs:
       - name: Clippy
         run: cargo clippy --locked --workspace --all-targets --features flower-client/replica,flower-client/conformance -- -D warnings
       - name: Workspace tests (including process faults and S3)
-        run: cargo test --locked --workspace --features flower-client/replica,flower-client/conformance,flower-backup/s3
+        run: |
+          # Each integration test starts its own runtimes and Raft cluster.
+          # Isolate Windows timing tests from competing test clusters.
+          if [[ "$RUNNER_OS" == Windows ]]; then
+            export RUST_TEST_THREADS=1
+          fi
+          cargo test --locked --workspace --features flower-client/replica,flower-client/conformance,flower-backup/s3
 
   docs:
     name: Documentation and protocol contracts
