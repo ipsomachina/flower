@@ -3,6 +3,10 @@
 //! group that owns the database it names, from any process, whether or
 //! not that process hosts the group.
 
+mod fixtures;
+
+use fixtures::{hc, s};
+
 use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::time::Duration;
@@ -14,22 +18,12 @@ use flower_cluster::statemachine::RuntimeFactory;
 use flower_cluster::txn::{CallWire, PrepareRequest, StepWire};
 use flower_engine::runtime::{CallKind, ClosureRuntime, HostCall};
 use flower_engine::txn::PlacedDb;
-use flower_sdk::abi::{HostOp, decode_envelope};
-use flower_sdk::{Failure, Value, fail};
+use flower_sdk::abi::HostOp;
+use flower_sdk::{Value, fail};
 use flower_server::api::AppState;
 use flower_server::forward::LEADER_URL;
 use flower_server::groups::{EPOCH_HEADER, GROUP_HEADER, HostApi, StateFactory, serve_host};
 use flower_server::listener::HttpOptions;
-
-fn s(text: &str) -> Value {
-    Value::String(text.to_string())
-}
-
-fn hc(host: &mut dyn HostCall, op: HostOp, args: Vec<Value>) -> Result<Value, Failure> {
-    let input = Value::Array(args).encode_binary().unwrap();
-    let output = host.op(op as u32 as u8, &input);
-    decode_envelope(Value::decode_binary(&output).unwrap())
-}
 
 /// `incr {key}` and linearizable `get {key}` over one counter
 /// collection.

@@ -5,6 +5,9 @@
 
 extern crate alloc;
 
+mod fixtures;
+use fixtures::read_dispatch;
+
 use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::time::Duration;
@@ -126,25 +129,6 @@ async fn serve_node() -> (tempfile::TempDir, String) {
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
     (dir, base)
-}
-
-/// Read one SSE dispatch (through the blank line ending it).
-async fn read_dispatch(response: &mut reqwest::Response) -> String {
-    let mut buffered = Vec::new();
-    tokio::time::timeout(Duration::from_secs(10), async {
-        loop {
-            let Some(chunk) = response.chunk().await.unwrap() else {
-                panic!("stream ended mid-dispatch");
-            };
-            buffered.extend_from_slice(&chunk);
-            if buffered.windows(2).any(|pair| pair == b"\n\n") {
-                return;
-            }
-        }
-    })
-    .await
-    .unwrap();
-    String::from_utf8(buffered).unwrap()
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

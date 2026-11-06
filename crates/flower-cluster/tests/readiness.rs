@@ -3,6 +3,10 @@
 //! a member that really cannot apply what it knows committed stays not
 //! ready.
 
+mod fixtures;
+
+use fixtures::{arr, hc, obj, s};
+
 use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -13,30 +17,13 @@ use flower_cluster::node::{Node, READY_APPLY_WAIT};
 use flower_cluster::statemachine::RuntimeFactory;
 use flower_engine::engine::MutationOptions;
 use flower_engine::runtime::{CallKind, ClosureRuntime, HostCall};
-use flower_sdk::abi::{HostOp, decode_envelope};
-use flower_sdk::{Failure, Value, fail};
+use flower_sdk::abi::HostOp;
+use flower_sdk::{Value, fail};
 use openraft::ServerState;
 
 /// Why a member that has not applied what it knows committed is not
 /// ready.
 const APPLYING: &str = "applying committed entries";
-
-fn s(text: &str) -> Value {
-    Value::String(text.to_string())
-}
-
-fn obj(pairs: Vec<(&str, Value)>) -> Value {
-    Value::Object(
-        pairs
-            .into_iter()
-            .map(|(key, value)| (key.to_string(), value))
-            .collect(),
-    )
-}
-
-fn arr(items: Vec<Value>) -> Value {
-    Value::Array(items)
-}
 
 /// One `tasks` collection and a `put` mutation.
 fn manifest() -> Value {
@@ -74,12 +61,6 @@ fn manifest() -> Value {
         ("triggers", arr(vec![])),
         ("http", arr(vec![])),
     ])
-}
-
-fn hc(host: &mut dyn HostCall, op: HostOp, args: Vec<Value>) -> Result<Value, Failure> {
-    let input = Value::Array(args).encode_binary().unwrap();
-    let output = host.op(op as u32 as u8, &input);
-    decode_envelope(Value::decode_binary(&output).unwrap())
 }
 
 /// `put {key, title}`.

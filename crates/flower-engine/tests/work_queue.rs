@@ -2,33 +2,16 @@
 //! mutations plus the native claim/lease protocol, driven through
 //! [`Engine`] with in-process closure runtimes.
 
+mod fixtures;
+
+use fixtures::{arr, hc, n, obj, s};
+
 use flower_engine::engine::{CallOptions, Engine, MutationOptions};
 use flower_engine::runtime::{CallKind, ClosureRuntime, HostCall, Runtime};
 use flower_engine::storage::GroupStore;
 use flower_engine::work_queue::ItemState;
-use flower_sdk::abi::{HostOp, decode_envelope};
+use flower_sdk::abi::HostOp;
 use flower_sdk::{Failure, Value, fail};
-
-fn s(text: &str) -> Value {
-    Value::String(text.to_string())
-}
-
-fn n(num: f64) -> Value {
-    Value::Number(num)
-}
-
-fn arr(items: Vec<Value>) -> Value {
-    Value::Array(items)
-}
-
-fn obj(pairs: Vec<(&str, Value)>) -> Value {
-    Value::Object(
-        pairs
-            .into_iter()
-            .map(|(key, value)| (key.to_string(), value))
-            .collect(),
-    )
-}
 
 fn definition(name: &str, kind: &str) -> Value {
     obj(vec![
@@ -70,14 +53,6 @@ fn setup(test: &str, manifest: Value, runtime: Box<dyn Runtime>) -> (Engine, std
 fn teardown(engine: Engine, path: std::path::PathBuf) {
     drop(engine);
     let _ = std::fs::remove_file(&path);
-}
-
-/// One host call through a closure's handler, decoding the envelope.
-fn hc(host: &mut dyn HostCall, op: HostOp, args: Vec<Value>) -> Result<Value, Failure> {
-    let input = Value::Array(args).encode_binary().unwrap();
-    let output = host.op(op as u32 as u8, &input);
-    let envelope = Value::decode_binary(&output).unwrap();
-    decode_envelope(envelope)
 }
 
 fn enqueue(

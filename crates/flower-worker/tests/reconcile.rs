@@ -2,7 +2,8 @@
 //! to wasm32 and deployed to a live node: one key kept current, pools
 //! drained, stale results rejected, failed computations retried.
 
-use std::collections::BTreeSet;
+mod fixtures;
+
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
@@ -10,62 +11,9 @@ use std::time::Duration;
 use flower_client::FlowerClient;
 use flower_client::client::{MutationOptions, RequestOptions};
 use flower_client::error::FlowerError;
-use flower_client::transport::Credentials;
-use flower_cluster::network::{InProcessFactory, Registry};
-use flower_cluster::node::Node;
-use flower_cluster::wasm::WasmFactory;
-use flower_engine::runtime::wasm::WasmBackend;
 use flower_worker::{ExternalWork, ReconcileEvent, ReconcileOptions, ReconcileSummary, reconcile};
 use serde_json::{Value, json};
 use tokio::sync::Notify;
-
-/// The workspace root.
-fn root() -> std::path::PathBuf {
-    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .to_path_buf()
-}
-
-/// Build the example for wasm32 in release, as the CLI tests build
-/// theirs, and return its bytes.
-fn example_wasm() -> Vec<u8> {
-    let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
-    let target = root().join("target").join("wasm-guest");
-    let status = std::process::Command::new(cargo)
-        .args([
-            "build",
-            "--offline",
-            "--quiet",
-            "--release",
-            "--target",
-            "wasm32-unknown-unknown",
-            "-p",
-            "external-transactions",
-        ])
-        .current_dir(root())
-        .env("CARGO_TARGET_DIR", &target)
-        .status()
-        .unwrap();
-    assert!(status.success(), "example build failed");
-    std::fs::read(
-        target
-            .join("wasm32-unknown-unknown")
-            .join("release")
-            .join("external_transactions.wasm"),
-    )
-    .unwrap()
-}
-
-/// The manifest the guest declares, read through wasmtime.
-fn manifest(wasm: &[u8]) -> Value {
-    let mut backend = WasmBackend::new().unwrap();
-    backend.register("app", wasm).unwrap();
-    let manifest = backend.manifest("app").unwrap();
-    serde_json::from_slice(&flower_engine::json::render(&manifest).unwrap()).unwrap()
-}
 
 /// A live node with the example deployed as `app` in `db`.
 struct App {
@@ -74,53 +22,7 @@ struct App {
 }
 
 async fn deployed() -> App {
-    let wasm = tokio::task::spawn_blocking(example_wasm).await.unwrap();
-    let manifest = manifest(&wasm);
-    let dir = tempfile::tempdir().unwrap();
-    let registry = Registry::new();
-    let node = Node::open(
-        1,
-        &dir.path().join("n1"),
-        Arc::new(openraft::Config::default()),
-        InProcessFactory::new(registry.clone()),
-        Arc::new(WasmFactory::default()),
-    )
-    .await
-    .unwrap();
-    registry.register(1, node.raft().clone());
-    node.initialize(BTreeSet::from([1])).await.unwrap();
-    for _ in 0..500 {
-        if node.status().leader == Some(1) {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
-    let state =
-        flower_server::api::AppState::new(Arc::new(node)).with_admin_token("secret".to_string());
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let base = format!("http://{}", listener.local_addr().unwrap());
-    tokio::spawn(flower_server::api::serve(listener, state));
-    let client = FlowerClient::builder(&base)
-        .credentials(Credentials::token("secret"))
-        .build()
-        .unwrap();
-    for _ in 0..500 {
-        if client.status(&RequestOptions::default()).await.is_ok() {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
-    client
-        .deploy(
-            "db",
-            "app",
-            None,
-            &wasm,
-            &manifest,
-            &RequestOptions::default().timeout(Duration::from_secs(60)),
-        )
-        .await
-        .unwrap();
+    let (dir, _node, client) = fixtures::deploy_example("external-transactions", "app").await;
     App { _dir: dir, client }
 }
 

@@ -1,6 +1,10 @@
 //! HTTP API integration: deploy, calls, forwards, admin auth,
 //! membership, backup, sync, status and metrics over a live node.
 
+mod fixtures;
+
+use fixtures::{hc, k, obj, read_dispatch, read_until_end, s};
+
 use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::time::Duration;
@@ -9,34 +13,9 @@ use flower_cluster::network::{InProcessFactory, Registry};
 use flower_cluster::node::Node;
 use flower_cluster::statemachine::RuntimeFactory;
 use flower_engine::runtime::{CallKind, ClosureRuntime, HostCall};
-use flower_sdk::abi::{HostOp, decode_envelope};
+use flower_sdk::abi::HostOp;
 use flower_sdk::{Failure, Value, fail};
 use flower_server::api::{AppState, serve};
-
-fn s(text: &str) -> Value {
-    Value::String(text.to_string())
-}
-
-fn obj(pairs: Vec<(&str, Value)>) -> Value {
-    Value::Object(
-        pairs
-            .into_iter()
-            .map(|(key, value)| (key.to_string(), value))
-            .collect(),
-    )
-}
-
-/// Canonical key text for a simple string key.
-fn k(name: &str) -> String {
-    format!("\"{name}\"")
-}
-
-fn hc(host: &mut dyn HostCall, op: HostOp, args: Vec<Value>) -> Result<Value, Failure> {
-    let input = Value::Array(args).encode_binary().unwrap();
-    let output = host.op(op as u32 as u8, &input);
-    let envelope = Value::decode_binary(&output).unwrap();
-    decode_envelope(envelope)
-}
 
 fn opt(value: Value) -> Option<Value> {
     if value == Value::Null {
@@ -1128,25 +1107,6 @@ async fn backup_needs_a_driver_then_reports() {
     assert_eq!(response.status(), 403);
 }
 
-/// Read one blank-line-delimited SSE dispatch.
-async fn read_dispatch(response: &mut reqwest::Response) -> String {
-    let mut buffered = Vec::new();
-    tokio::time::timeout(Duration::from_secs(10), async {
-        loop {
-            let Some(chunk) = response.chunk().await.unwrap() else {
-                panic!("stream ended mid-dispatch");
-            };
-            buffered.extend_from_slice(&chunk);
-            if buffered.windows(2).any(|pair| pair == b"\n\n") {
-                return;
-            }
-        }
-    })
-    .await
-    .unwrap();
-    String::from_utf8(buffered).unwrap()
-}
-
 #[tokio::test]
 async fn watch_streams_snapshots() {
     let (_dir, served) = serve_node().await;
@@ -1536,22 +1496,6 @@ async fn health_probes_report_liveness_and_readiness() {
     assert_eq!(ready.status(), 503);
     let body: serde_json::Value = ready.json().await.unwrap();
     assert_eq!(body["ok"], false);
-}
-
-/// Read SSE dispatches until one contains `needle`, then expect the
-/// stream to end.
-async fn read_until_end(response: &mut reqwest::Response, needle: &str) -> String {
-    let mut buffered = Vec::new();
-    tokio::time::timeout(Duration::from_secs(20), async {
-        while let Some(chunk) = response.chunk().await.unwrap() {
-            buffered.extend_from_slice(&chunk);
-        }
-    })
-    .await
-    .expect("the stream never ended");
-    let text = String::from_utf8(buffered).unwrap();
-    assert!(text.contains(needle), "{text}");
-    text
 }
 
 #[tokio::test]

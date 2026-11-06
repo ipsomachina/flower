@@ -2,6 +2,10 @@
 //! prepare-then-apply across participants, all-or-nothing stale
 //! rejection, abort on step failure and step-list validation.
 
+mod fixtures;
+
+use fixtures::{arr, hc, k, obj, s};
+
 use flower_engine::engine::{
     CallOptions, Engine, MultiStep, MutationOptions, PrepareOutcome, RetryIdentity,
 };
@@ -10,29 +14,8 @@ use flower_engine::retry::ScopedIdentity;
 use flower_engine::runtime::{CallKind, ClosureRuntime, HostCall, Runtime};
 use flower_engine::storage::GroupStore;
 use flower_engine::storage::meta;
-use flower_sdk::abi::{HostOp, decode_envelope};
-use flower_sdk::{Failure, Value, fail};
-
-fn s(text: &str) -> Value {
-    Value::String(text.to_string())
-}
-
-fn k(name: &str) -> String {
-    format!("\"{name}\"")
-}
-
-fn arr(items: Vec<Value>) -> Value {
-    Value::Array(items)
-}
-
-fn obj(pairs: Vec<(&str, Value)>) -> Value {
-    Value::Object(
-        pairs
-            .into_iter()
-            .map(|(key, value)| (key.to_string(), value))
-            .collect(),
-    )
-}
+use flower_sdk::abi::HostOp;
+use flower_sdk::{Value, fail};
 
 fn collection(name: &str) -> Value {
     obj(vec![
@@ -66,13 +49,6 @@ fn manifest() -> Value {
         ("triggers", arr(vec![])),
         ("http", arr(vec![])),
     ])
-}
-
-fn hc(host: &mut dyn HostCall, op: HostOp, args: Vec<Value>) -> Result<Value, Failure> {
-    let input = Value::Array(args).encode_binary().unwrap();
-    let output = host.op(op as u32 as u8, &input);
-    let envelope = Value::decode_binary(&output).unwrap();
-    decode_envelope(envelope)
 }
 
 fn runtime() -> Box<dyn Runtime> {

@@ -7,6 +7,10 @@
 //! deployment waits; its timers that come due meanwhile are held for
 //! it; refusals change nothing.
 
+mod fixtures;
+
+use fixtures::{arr, hc, k, n, obj, s};
+
 use flower_engine::batch::BatchItem;
 use flower_engine::engine::{CallOptions, Engine, FirePrepare, MutationOptions};
 use flower_engine::host::{QUEUE_COLLECTION, RAW_COLLECTION, TIMER_COLLECTION};
@@ -18,36 +22,11 @@ use flower_engine::storage::{GroupStore, SnapshotTable, meta};
 use flower_engine::task::TaskPrepare;
 use flower_engine::timer::TimerState;
 use flower_engine::work_queue::{ClaimRequest, NewItem, QUEUE_UNDECLARED};
-use flower_sdk::abi::{HostOp, decode_envelope};
+use flower_sdk::abi::HostOp;
 use flower_sdk::error::codes;
 use flower_sdk::{Failure, Value, fail};
 
 const DB: &[u8] = b"db";
-
-fn s(text: &str) -> Value {
-    Value::String(text.to_string())
-}
-
-fn n(num: f64) -> Value {
-    Value::Number(num)
-}
-
-fn obj(pairs: Vec<(&str, Value)>) -> Value {
-    Value::Object(
-        pairs
-            .into_iter()
-            .map(|(key, value)| (key.to_string(), value))
-            .collect(),
-    )
-}
-
-fn arr(items: Vec<Value>) -> Value {
-    Value::Array(items)
-}
-
-fn k(name: &str) -> String {
-    format!("\"{name}\"")
-}
 
 fn schema(kind: &str) -> Value {
     obj(vec![("type", s(kind))])
@@ -153,12 +132,6 @@ fn consumer_manifest(slot: bool) -> Value {
         root.push(("bindings", obj(vec![("source", s("bulk"))])));
     }
     obj(root)
-}
-
-fn hc(host: &mut dyn HostCall, op: HostOp, args: Vec<Value>) -> Result<Value, Failure> {
-    let input = Value::Array(args).encode_binary().unwrap();
-    let output = host.op(op as u32 as u8, &input);
-    decode_envelope(Value::decode_binary(&output).unwrap())
 }
 
 fn number(args: &Value, name: &str) -> u64 {

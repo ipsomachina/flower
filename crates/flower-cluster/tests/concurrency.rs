@@ -2,6 +2,10 @@
 //! on the engine reader, overlapping each other and the writer lane,
 //! and admission bounds them with explicit, retryable overload.
 
+mod fixtures;
+
+use fixtures::{arr, hc, obj, s};
+
 use std::collections::BTreeSet;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
@@ -13,28 +17,11 @@ use flower_cluster::node::{Node, NodeError};
 use flower_cluster::statemachine::RuntimeFactory;
 use flower_engine::engine::{CallOptions, MutationOptions};
 use flower_engine::runtime::{CallKind, ClosureRuntime, HostCall, Runtime};
-use flower_sdk::abi::{HostOp, decode_envelope};
+use flower_sdk::abi::HostOp;
 use flower_sdk::{Failure, Value, fail};
 
 /// Guest time of one `slow` query.
 const SLOW: Duration = Duration::from_millis(50);
-
-fn s(text: &str) -> Value {
-    Value::String(text.to_string())
-}
-
-fn obj(pairs: Vec<(&str, Value)>) -> Value {
-    Value::Object(
-        pairs
-            .into_iter()
-            .map(|(key, value)| (key.to_string(), value))
-            .collect(),
-    )
-}
-
-fn arr(items: Vec<Value>) -> Value {
-    Value::Array(items)
-}
 
 fn manifest() -> Value {
     let string = obj(vec![("type", s("string"))]);
@@ -82,12 +69,6 @@ fn manifest() -> Value {
         ("triggers", arr(vec![])),
         ("http", arr(vec![])),
     ])
-}
-
-fn hc(host: &mut dyn HostCall, op: HostOp, args: Vec<Value>) -> Result<Value, Failure> {
-    let input = Value::Array(args).encode_binary().unwrap();
-    let output = host.op(op as u32 as u8, &input);
-    decode_envelope(Value::decode_binary(&output).unwrap())
 }
 
 /// The one row the tests read and write.

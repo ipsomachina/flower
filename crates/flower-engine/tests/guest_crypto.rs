@@ -6,6 +6,10 @@
 
 extern crate alloc;
 
+mod fixtures;
+
+use fixtures::{n, obj, s};
+
 use std::sync::Arc;
 
 use flower_crypto::host::CryptoHost;
@@ -218,23 +222,6 @@ mod app {
     ];
 
     pub static APP: App = App::new(&[&DEFS]);
-}
-
-fn s(text: &str) -> Value {
-    Value::String(text.to_string())
-}
-
-fn n(number: f64) -> Value {
-    Value::Number(number)
-}
-
-fn obj(pairs: Vec<(&str, Value)>) -> Value {
-    Value::Object(
-        pairs
-            .into_iter()
-            .map(|(key, value)| (key.to_string(), value))
-            .collect(),
-    )
 }
 
 /// The app deployed with an unscoped crypto host.

@@ -3,6 +3,10 @@
 //! retryable 503 `storage_failed`, and reports both files' compaction in
 //! its metrics.
 
+mod fixtures;
+
+use fixtures::s;
+
 use std::collections::BTreeSet;
 use std::path::Path;
 use std::sync::Arc;
@@ -81,10 +85,6 @@ fn filling_files(full: Arc<AtomicBool>) -> FileOpener {
             full: full.clone(),
         })
     })
-}
-
-fn s(text: &str) -> Value {
-    Value::String(text.to_string())
 }
 
 /// `put {key, title}` stores a task.

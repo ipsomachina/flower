@@ -14,6 +14,10 @@
 //! default 2000) and `FLOWER_BENCH_PASSES` (interleaved passes, default
 //! 3) tune it.
 
+mod fixtures;
+
+use fixtures::{hc, obj, s};
+
 use std::collections::BTreeSet;
 use std::hint::black_box;
 use std::sync::Arc;
@@ -26,24 +30,11 @@ use flower_cluster::statemachine::RuntimeFactory;
 use flower_engine::engine::{CallOptions, MutationOptions};
 use flower_engine::json::render;
 use flower_engine::runtime::{CallKind, ClosureRuntime, HostCall};
-use flower_sdk::abi::{HostOp, decode_envelope};
-use flower_sdk::{Failure, Value, fail};
-
-fn s(text: &str) -> Value {
-    Value::String(text.to_string())
-}
+use flower_sdk::abi::HostOp;
+use flower_sdk::{Value, fail};
 
 fn n(number: f64) -> Value {
     Value::Number(number)
-}
-
-fn obj(pairs: Vec<(&str, Value)>) -> Value {
-    Value::Object(
-        pairs
-            .into_iter()
-            .map(|(key, value)| (key.to_string(), value))
-            .collect(),
-    )
 }
 
 fn env(name: &str, default: u64) -> u64 {
@@ -84,12 +75,6 @@ fn manifest() -> Value {
         ("triggers", Value::Array(vec![])),
         ("http", Value::Array(vec![])),
     ])
-}
-
-fn hc(host: &mut dyn HostCall, op: HostOp, args: Vec<Value>) -> Result<Value, Failure> {
-    let input = Value::Array(args).encode_binary().unwrap();
-    let output = host.op(op as u32 as u8, &input);
-    decode_envelope(Value::decode_binary(&output).unwrap())
 }
 
 /// Burn `rounds` of xorshift.

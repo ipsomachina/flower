@@ -4,6 +4,10 @@
 //! restart once the disk has room recovers every acknowledged write.
 //! Online compaction runs beside it and stops on the same failure.
 
+mod fixtures;
+
+use fixtures::{hc, obj, s};
+
 use std::collections::BTreeSet;
 use std::path::Path;
 use std::sync::Arc;
@@ -21,8 +25,8 @@ use flower_cluster::types::ResponseOutcome;
 use flower_engine::engine::{CallOptions, MutationOptions};
 use flower_engine::runtime::{CallKind, ClosureRuntime, HostCall};
 use flower_engine::storage::compact::{CompactionSettings, Compactor};
-use flower_sdk::abi::{HostOp, decode_envelope};
-use flower_sdk::{Failure, Value, fail};
+use flower_sdk::abi::HostOp;
+use flower_sdk::{Value, fail};
 use redb::backends::FileBackend;
 use redb::{ReadableDatabase, TableDefinition};
 
@@ -106,19 +110,6 @@ fn filling_files(which: &'static str, full: Arc<AtomicBool>) -> FileOpener {
     })
 }
 
-fn s(text: &str) -> Value {
-    Value::String(text.to_string())
-}
-
-fn obj(pairs: Vec<(&str, Value)>) -> Value {
-    Value::Object(
-        pairs
-            .into_iter()
-            .map(|(key, value)| (key.to_string(), value))
-            .collect(),
-    )
-}
-
 fn manifest() -> Value {
     let string = obj(vec![("type", s("string"))]);
     let task = obj(vec![
@@ -160,13 +151,6 @@ fn manifest() -> Value {
         ("triggers", Value::Array(vec![])),
         ("http", Value::Array(vec![])),
     ])
-}
-
-/// One host call, decoding the envelope.
-fn hc(host: &mut dyn HostCall, op: HostOp, args: Vec<Value>) -> Result<Value, Failure> {
-    let input = Value::Array(args).encode_binary().unwrap();
-    let output = host.op(op as u32 as u8, &input);
-    decode_envelope(Value::decode_binary(&output).unwrap())
 }
 
 /// `put {key, title}` stores a task; `get {key}` reads it back.

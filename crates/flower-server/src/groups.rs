@@ -37,10 +37,10 @@ use axum::body::{Body, Bytes};
 use axum::extract::{Request, State};
 use axum::http::{HeaderName, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
-use flower_cluster::admission::{Class, REQUEST_OVERHEAD};
+use flower_cluster::admission::Class;
 use flower_cluster::group::{GroupId, ROOT};
 use flower_cluster::host::{GroupEvent, Host};
-use flower_cluster::node::{Node, NodeError};
+use flower_cluster::node::Node;
 use flower_cluster::partitions::Route;
 use flower_cluster::peer::{ForwardedRequest, Forwarder, MemberRequest, MemberResponse};
 use flower_engine::placement::{PARTITION_MOVED, PARTITION_MOVING, PARTITION_RETIRED};
@@ -343,45 +343,8 @@ async fn read_body(
     body: Body,
     path: &str,
 ) -> Result<(Bytes, flower_cluster::admission::Lease), Box<Response>> {
-    use http_body_util::BodyExt;
     let (limit, class) = body_limits(state, path);
-    let too_large =
-        || Box::new((StatusCode::PAYLOAD_TOO_LARGE, "request body too large").into_response());
-    let declared = headers
-        .get(axum::http::header::CONTENT_LENGTH)
-        .and_then(|value| value.to_str().ok()?.parse::<usize>().ok());
-    if declared.is_some_and(|declared| declared > limit) {
-        return Err(too_large());
-    }
-    let overloaded = |overload| Box::new(ApiError::node(NodeError::from(overload)).into_response());
-    let mut lease = state
-        .node
-        .admission()
-        .lease(class, REQUEST_OVERHEAD + declared.unwrap_or(0))
-        .map_err(overloaded)?;
-    let mut leased = declared.unwrap_or(0);
-    let mut buffered = Vec::with_capacity(declared.unwrap_or(0));
-    let mut body = body;
-    while let Some(frame) = body.frame().await {
-        let Ok(frame) = frame else {
-            return Err(Box::new(
-                (StatusCode::BAD_REQUEST, "request body failed").into_response(),
-            ));
-        };
-        let Ok(data) = frame.into_data() else {
-            continue;
-        };
-        if buffered.len() + data.len() > limit {
-            return Err(too_large());
-        }
-        let needed = buffered.len() + data.len();
-        if needed > leased {
-            lease.grow(needed - leased).map_err(overloaded)?;
-            leased = needed;
-        }
-        buffered.extend_from_slice(&data);
-    }
-    Ok((Bytes::from(buffered), lease))
+    crate::forward::buffer(state, class, headers, body, limit).await
 }
 
 /// Marks a request whose body the dispatcher already read under a lease:

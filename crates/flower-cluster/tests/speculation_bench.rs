@@ -15,6 +15,10 @@
 //! `FLOWER_BENCH_FSYNC` (1 syncs commits; default 0) tune
 //! it.
 
+mod fixtures;
+
+use fixtures::{hc, obj, s};
+
 use std::collections::BTreeSet;
 use std::hint::black_box;
 use std::sync::Arc;
@@ -27,21 +31,8 @@ use flower_cluster::speculation::SpeculationSettings;
 use flower_cluster::statemachine::RuntimeFactory;
 use flower_engine::engine::MutationOptions;
 use flower_engine::runtime::{CallKind, ClosureRuntime, HostCall};
-use flower_sdk::abi::{HostOp, decode_envelope};
-use flower_sdk::{Failure, Value, fail};
-
-fn s(text: &str) -> Value {
-    Value::String(text.to_string())
-}
-
-fn obj(pairs: Vec<(&str, Value)>) -> Value {
-    Value::Object(
-        pairs
-            .into_iter()
-            .map(|(key, value)| (key.to_string(), value))
-            .collect(),
-    )
-}
+use flower_sdk::abi::HostOp;
+use flower_sdk::{Value, fail};
 
 fn manifest() -> Value {
     let counters = obj(vec![
@@ -67,12 +58,6 @@ fn manifest() -> Value {
         ("triggers", Value::Array(vec![])),
         ("http", Value::Array(vec![])),
     ])
-}
-
-fn hc(host: &mut dyn HostCall, op: HostOp, args: Vec<Value>) -> Result<Value, Failure> {
-    let input = Value::Array(args).encode_binary().unwrap();
-    let output = host.op(op as u32 as u8, &input);
-    decode_envelope(Value::decode_binary(&output).unwrap())
 }
 
 /// `bump {key}`: read a counter, burn the configured work, write it

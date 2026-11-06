@@ -4,29 +4,16 @@
 
 extern crate alloc;
 
+mod fixtures;
+
+use fixtures::{n, obj, s};
+
 use flower_engine::engine::{CallOptions, Engine, MutationOptions};
 use flower_engine::runtime::NativeRuntime;
 use flower_engine::storage::GroupStore;
 use flower_engine::task::{TaskPrepare, TaskStatus};
 use flower_sdk::error::codes;
 use flower_sdk::{Failure, Value};
-
-fn s(text: &str) -> Value {
-    Value::String(text.to_string())
-}
-
-fn n(number: f64) -> Value {
-    Value::Number(number)
-}
-
-fn obj(pairs: Vec<(&str, Value)>) -> Value {
-    Value::Object(
-        pairs
-            .into_iter()
-            .map(|(key, value)| (key.to_string(), value))
-            .collect(),
-    )
-}
 
 fn none() -> Value {
     obj(vec![])

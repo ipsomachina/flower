@@ -4,6 +4,10 @@
 
 extern crate alloc;
 
+mod fixtures;
+
+use fixtures::{arr, hc, k, n, obj, s};
+
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -14,33 +18,8 @@ use flower_engine::batch::BatchItem;
 use flower_engine::engine::{CallOptions, Engine, MutationOptions, PrepareOutcome};
 use flower_engine::runtime::{CallKind, ClosureRuntime, HostCall, NativeRuntime};
 use flower_engine::storage::GroupStore;
-use flower_sdk::abi::{HostOp, decode_envelope};
+use flower_sdk::abi::HostOp;
 use flower_sdk::{Failure, Principal, Value, fail};
-
-fn s(text: &str) -> Value {
-    Value::String(text.to_string())
-}
-
-fn n(num: f64) -> Value {
-    Value::Number(num)
-}
-
-fn obj(pairs: Vec<(&str, Value)>) -> Value {
-    Value::Object(
-        pairs
-            .into_iter()
-            .map(|(key, value)| (key.to_string(), value))
-            .collect(),
-    )
-}
-
-fn arr(items: Vec<Value>) -> Value {
-    Value::Array(items)
-}
-
-fn k(name: &str) -> String {
-    format!("\"{name}\"")
-}
 
 fn definition(name: &str, kind: &str) -> Value {
     obj(vec![
@@ -112,13 +91,6 @@ fn manifest() -> Value {
             ]),
         ),
     ])
-}
-
-fn hc(host: &mut dyn HostCall, op: HostOp, args: Vec<Value>) -> Result<Value, Failure> {
-    let input = Value::Array(args).encode_binary().unwrap();
-    let output = host.op(op as u32 as u8, &input);
-    let envelope = Value::decode_binary(&output).unwrap();
-    decode_envelope(envelope)
 }
 
 fn field(args: &Value, name: &str) -> Value {

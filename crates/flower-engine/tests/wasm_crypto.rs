@@ -2,6 +2,10 @@
 //! calls reach the host, and a declared catalog key signs and
 //! verifies session tokens only for the module that declares it.
 
+mod fixtures;
+
+use fixtures::s;
+
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::Arc;
@@ -54,10 +58,6 @@ fn guest_wasm() -> Vec<u8> {
             .join("flower_guest_crypto.wasm"),
     )
     .unwrap()
-}
-
-fn s(text: &str) -> Value {
-    Value::String(text.to_string())
 }
 
 fn args(pairs: Vec<(&str, Value)>) -> Value {

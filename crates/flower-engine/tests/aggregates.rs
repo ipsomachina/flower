@@ -2,6 +2,10 @@
 //! closure runtime: the reducer runs without a context, and one that
 //! reaches for it fails the write; manifests naming no index refuse.
 
+mod fixtures;
+
+use fixtures::{obj, s};
+
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use flower_engine::derived::AGGREGATE_CONTEXT_FORBIDDEN;
@@ -15,19 +19,6 @@ use flower_sdk::{Failure, Value, fail};
 static REDUCES: AtomicU32 = AtomicU32::new(0);
 static BUILDS: AtomicU32 = AtomicU32::new(0);
 static REACH: AtomicBool = AtomicBool::new(false);
-
-fn s(text: &str) -> Value {
-    Value::String(text.to_string())
-}
-
-fn obj(pairs: Vec<(&str, Value)>) -> Value {
-    Value::Object(
-        pairs
-            .into_iter()
-            .map(|(key, value)| (key.to_string(), value))
-            .collect(),
-    )
-}
 
 fn json() -> Value {
     obj(vec![("type", s("json"))])

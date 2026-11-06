@@ -9,6 +9,10 @@
 //! the clock (`poll`), resolve a managed key (`keys`) or read something
 //! no dependency names (`volatile`); `until` becomes its expiry.
 
+mod fixtures;
+
+use fixtures::{hc, obj, s};
+
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -17,33 +21,14 @@ use flower_engine::engine::{CallOptions, Engine, MutationOptions, PrepareOutcome
 use flower_engine::runtime::{CallKind, HostCall, Runtime};
 use flower_engine::speculation::{PrepareMutation, Verdict};
 use flower_engine::storage::{GroupStore, Overlay};
-use flower_sdk::abi::{HostOp, decode_envelope};
+use flower_sdk::abi::HostOp;
 use flower_sdk::{CallFailure, Failure, Principal, Value, fail};
-
-fn s(text: &str) -> Value {
-    Value::String(text.to_string())
-}
-
-fn obj(pairs: Vec<(&str, Value)>) -> Value {
-    Value::Object(
-        pairs
-            .into_iter()
-            .map(|(key, value)| (key.to_string(), value))
-            .collect(),
-    )
-}
 
 fn field<'a>(value: &'a Value, name: &str) -> &'a Value {
     value
         .as_object()
         .and_then(|map| map.get(name))
         .unwrap_or(&Value::Null)
-}
-
-fn hc(host: &mut dyn HostCall, op: HostOp, args: Vec<Value>) -> Result<Value, Failure> {
-    let input = Value::Array(args).encode_binary().unwrap();
-    let output = host.op(op as u32 as u8, &input);
-    decode_envelope(Value::decode_binary(&output).unwrap())
 }
 
 fn session_key(token: &str) -> String {

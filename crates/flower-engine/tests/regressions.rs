@@ -3,6 +3,10 @@
 //! staging, several databases and modules, pages past the old fixed
 //! scan windows, stale patches and nested calls.
 
+mod fixtures;
+
+use fixtures::{arr, hc, index, k, n, obj, s};
+
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -12,44 +16,11 @@ use flower_engine::engine::{
 use flower_engine::lane::PreparedPatch;
 use flower_engine::runtime::{CallKind, ClosureRuntime, HostCall, Runtime};
 use flower_engine::storage::GroupStore;
-use flower_sdk::abi::{HostOp, decode_envelope};
+use flower_sdk::abi::HostOp;
 use flower_sdk::{Failure, Value, fail};
-
-fn s(text: &str) -> Value {
-    Value::String(text.to_string())
-}
-
-fn n(num: f64) -> Value {
-    Value::Number(num)
-}
-
-fn obj(pairs: Vec<(&str, Value)>) -> Value {
-    Value::Object(
-        pairs
-            .into_iter()
-            .map(|(key, value)| (key.to_string(), value))
-            .collect(),
-    )
-}
-
-fn arr(items: Vec<Value>) -> Value {
-    Value::Array(items)
-}
-
-/// Canonical key text for a string key.
-fn k(name: &str) -> String {
-    format!("\"{name}\"")
-}
 
 fn schema(kind: &str) -> Value {
     obj(vec![("type", s(kind))])
-}
-
-fn index(name: &str, fields: Vec<&str>) -> Value {
-    obj(vec![
-        ("name", s(name)),
-        ("fields", arr(fields.into_iter().map(s).collect())),
-    ])
 }
 
 fn collection(name: &str, key: &str, indexes: Vec<Value>, references: Vec<Value>) -> Value {
@@ -117,13 +88,6 @@ where
         + 'static,
 {
     Box::new(ClosureRuntime::new(invoke))
-}
-
-/// One host call through a closure's handler, decoding the envelope.
-fn hc(host: &mut dyn HostCall, op: HostOp, args: Vec<Value>) -> Result<Value, Failure> {
-    let input = Value::Array(args).encode_binary().unwrap();
-    let output = host.op(op as u32 as u8, &input);
-    decode_envelope(Value::decode_binary(&output).unwrap())
 }
 
 fn set(host: &mut dyn HostCall, collection: &str, key: &str, value: Value) -> Result<(), Failure> {

@@ -2,6 +2,10 @@
 //! once, followers never do, the run replicates, and both the work left
 //! and a failing task's backoff carry over a change of leader.
 
+mod fixtures;
+
+use fixtures::{json_schema, obj, s};
+
 use std::collections::BTreeSet;
 use std::path::Path;
 use std::sync::Arc;
@@ -20,23 +24,6 @@ use flower_sdk::{Failure, Value, fail};
 /// Runs of `tick` anywhere in this process: guest code runs only where a
 /// run is prepared.
 static TICKS: AtomicU64 = AtomicU64::new(0);
-
-fn s(text: &str) -> Value {
-    Value::String(text.to_string())
-}
-
-fn obj(pairs: Vec<(&str, Value)>) -> Value {
-    Value::Object(
-        pairs
-            .into_iter()
-            .map(|(key, value)| (key.to_string(), value))
-            .collect(),
-    )
-}
-
-fn json_schema() -> Value {
-    obj(vec![("type", s("json"))])
-}
 
 /// `state` rows plus `arm`, `raise` and `get`; tasks `tick` (due when
 /// `next` says, counting its runs in `count` and clearing `next`) and

@@ -6,6 +6,10 @@
 
 extern crate alloc;
 
+mod fixtures;
+
+use fixtures::{obj, s};
+
 use flower_engine::engine::{CallOptions, Engine, MutationOptions};
 use flower_engine::runtime::NativeRuntime;
 use flower_engine::storage::GroupStore;
@@ -260,19 +264,6 @@ mod crm_app {
     /// The same consumer without imports: it may still name `$core` in
     /// code, but nothing binds it.
     pub static UNLINKED: App = App::new(&[&DEFINITIONS]);
-}
-
-fn s(text: &str) -> Value {
-    Value::String(text.to_string())
-}
-
-fn obj(pairs: Vec<(&str, Value)>) -> Value {
-    Value::Object(
-        pairs
-            .into_iter()
-            .map(|(key, value)| (key.to_string(), value))
-            .collect(),
-    )
 }
 
 /// The app's manifest, with deployment bindings when given.

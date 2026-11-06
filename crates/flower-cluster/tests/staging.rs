@@ -3,6 +3,10 @@
 //! rebuilds derived roots through the writer before activation, and the
 //! leader's maintenance collects what deployments retired.
 
+mod fixtures;
+
+use fixtures::{arr, hc, index, json_schema, k, obj, s, str_schema};
+
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
@@ -13,45 +17,8 @@ use flower_cluster::statemachine::RuntimeFactory;
 use flower_engine::engine::{CallOptions, MutationOptions};
 use flower_engine::runtime::{CallKind, ClosureRuntime, HostCall};
 use flower_engine::staging::StagingPhase;
-use flower_sdk::abi::{HostOp, decode_envelope};
-use flower_sdk::{Failure, Value, fail};
-
-fn s(text: &str) -> Value {
-    Value::String(text.to_string())
-}
-
-fn obj(pairs: Vec<(&str, Value)>) -> Value {
-    Value::Object(
-        pairs
-            .into_iter()
-            .map(|(key, value)| (key.to_string(), value))
-            .collect(),
-    )
-}
-
-fn arr(items: Vec<Value>) -> Value {
-    Value::Array(items)
-}
-
-/// Canonical key text for a simple string key.
-fn k(name: &str) -> String {
-    format!("\"{name}\"")
-}
-
-fn str_schema() -> Value {
-    obj(vec![("type", s("string"))])
-}
-
-fn json_schema() -> Value {
-    obj(vec![("type", s("json"))])
-}
-
-fn index(name: &str, fields: Vec<&str>) -> Value {
-    obj(vec![
-        ("name", s(name)),
-        ("fields", arr(fields.into_iter().map(s).collect())),
-    ])
-}
+use flower_sdk::abi::HostOp;
+use flower_sdk::{Value, fail};
 
 /// `tasks {title}` with the given indexes.
 fn tasks(indexes: Vec<Value>) -> Value {
@@ -111,12 +78,6 @@ fn app_manifest(again: bool) -> Value {
         ("triggers", arr(vec![])),
         ("http", arr(vec![])),
     ])
-}
-
-fn hc(host: &mut dyn HostCall, op: HostOp, args: Vec<Value>) -> Result<Value, Failure> {
-    let input = Value::Array(args).encode_binary().unwrap();
-    let output = host.op(op as u32 as u8, &input);
-    decode_envelope(Value::decode_binary(&output).unwrap())
 }
 
 fn field(value: &Value, name: &str) -> Value {

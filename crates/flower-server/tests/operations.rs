@@ -4,6 +4,10 @@
 //! request bodies leased against the admission budget before they are
 //! read; the activity stream.
 
+mod fixtures;
+
+use fixtures::{hc, s};
+
 use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -13,21 +17,11 @@ use flower_cluster::network::{InProcessFactory, Registry};
 use flower_cluster::node::Node;
 use flower_cluster::statemachine::RuntimeFactory;
 use flower_engine::runtime::{CallKind, ClosureRuntime, HostCall};
-use flower_sdk::abi::{HostOp, decode_envelope};
-use flower_sdk::{Failure, Value, fail};
+use flower_sdk::abi::HostOp;
+use flower_sdk::{Value, fail};
 use flower_server::api::{AppState, serve};
 use openraft::ServerState;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-
-fn s(text: &str) -> Value {
-    Value::String(text.to_string())
-}
-
-fn hc(host: &mut dyn HostCall, op: HostOp, args: Vec<Value>) -> Result<Value, Failure> {
-    let input = Value::Array(args).encode_binary().unwrap();
-    let output = host.op(op as u32 as u8, &input);
-    decode_envelope(Value::decode_binary(&output).unwrap())
-}
 
 /// Whether the gate `parked` queries wait at is open, and how many
 /// parked there.

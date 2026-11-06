@@ -2,6 +2,10 @@
 //! see it go, and watchers it is hidden from receive nothing, since their
 //! view of the row never held it.
 
+mod fixtures;
+
+use fixtures::{field, hc, s};
+
 use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::time::Duration;
@@ -12,27 +16,10 @@ use flower_cluster::statemachine::RuntimeFactory;
 use flower_cluster::types::ResponseOutcome;
 use flower_engine::engine::{CallOptions, MutationOptions};
 use flower_engine::runtime::{CallKind, ClosureRuntime, HostCall};
-use flower_sdk::abi::{HostOp, decode_envelope};
+use flower_sdk::abi::HostOp;
 use flower_sdk::{Failure, Principal, Value, fail};
 use flower_server::watch::{Hub, HubMessage};
 use tokio::sync::mpsc;
-
-fn s(text: &str) -> Value {
-    Value::String(text.to_string())
-}
-
-fn field(args: &Value, name: &str) -> Value {
-    match args {
-        Value::Object(map) => map.get(name).cloned().unwrap_or(Value::Null),
-        _ => Value::Null,
-    }
-}
-
-fn hc(host: &mut dyn HostCall, op: HostOp, args: Vec<Value>) -> Result<Value, Failure> {
-    let input = Value::Array(args).encode_binary().unwrap();
-    let output = host.op(op as u32 as u8, &input);
-    decode_envelope(Value::decode_binary(&output).unwrap())
-}
 
 fn guest(
     kind: CallKind,

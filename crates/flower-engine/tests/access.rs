@@ -9,40 +9,19 @@
 //! `members` keyed `[team, subject]`) and admins read them too; only the
 //! owner reads `secret`; owners and editors update them.
 
+mod fixtures;
+
+use fixtures::{arr, hc, k, n, obj, s};
+
 use flower_engine::engine::{CallOptions, Engine, FirePrepare, MutationOptions};
 use flower_engine::history::{HistoryProvider, Version};
 use flower_engine::runtime::{CallKind, ClosureRuntime, HostCall};
 use flower_engine::storage::GroupStore;
-use flower_sdk::abi::{HostOp, decode_envelope};
+use flower_sdk::abi::HostOp;
 use flower_sdk::{Failure, Principal, Value, fail};
-
-fn s(text: &str) -> Value {
-    Value::String(text.to_string())
-}
-
-fn n(num: f64) -> Value {
-    Value::Number(num)
-}
-
-fn obj(pairs: Vec<(&str, Value)>) -> Value {
-    Value::Object(
-        pairs
-            .into_iter()
-            .map(|(key, value)| (key.to_string(), value))
-            .collect(),
-    )
-}
-
-fn arr(items: Vec<Value>) -> Value {
-    Value::Array(items)
-}
 
 fn json(text: &str) -> Value {
     flower_engine::json::parse_value(text.as_bytes()).unwrap()
-}
-
-fn k(name: &str) -> String {
-    format!("\"{name}\"")
 }
 
 fn field<'a>(value: &'a Value, name: &str) -> &'a Value {
@@ -54,12 +33,6 @@ fn field<'a>(value: &'a Value, name: &str) -> &'a Value {
 
 fn text(value: &Value, name: &str) -> String {
     field(value, name).as_str().unwrap_or_default().to_string()
-}
-
-fn hc(host: &mut dyn HostCall, op: HostOp, args: Vec<Value>) -> Result<Value, Failure> {
-    let input = Value::Array(args).encode_binary().unwrap();
-    let output = host.op(op as u32 as u8, &input);
-    decode_envelope(Value::decode_binary(&output).unwrap())
 }
 
 /// Page keys from a scan or range page.

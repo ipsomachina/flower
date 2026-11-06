@@ -2,6 +2,10 @@
 //! redelivery dedup, sync-down replicas and the offline intent
 //! queue against a live server.
 
+mod fixtures;
+
+use fixtures::{hc, s};
+
 use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -21,13 +25,9 @@ use flower_cluster::statemachine::{RuntimeFactory, StateMachine};
 use flower_engine::engine::{CallOptions, Engine};
 use flower_engine::runtime::{CallKind, ClosureRuntime, HostCall};
 use flower_engine::storage::GroupStore;
-use flower_sdk::abi::{HostOp, decode_envelope};
+use flower_sdk::abi::HostOp;
 use flower_sdk::{Failure, Value, fail};
 use flower_server::api::{AppState, serve};
-
-fn s(text: &str) -> Value {
-    Value::String(text.to_string())
-}
 
 fn obj(pairs: Vec<(&str, Value)>) -> Value {
     Value::Object(
@@ -40,13 +40,6 @@ fn obj(pairs: Vec<(&str, Value)>) -> Value {
 
 fn k(name: &str) -> String {
     format!("\"{name}\"")
-}
-
-fn hc(host: &mut dyn HostCall, op: HostOp, args: Vec<Value>) -> Result<Value, Failure> {
-    let input = Value::Array(args).encode_binary().unwrap();
-    let output = host.op(op as u32 as u8, &input);
-    let envelope = Value::decode_binary(&output).unwrap();
-    decode_envelope(envelope)
 }
 
 fn opt(value: Value) -> Option<Value> {

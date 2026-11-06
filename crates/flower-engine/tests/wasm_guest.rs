@@ -2,6 +2,10 @@
 //! run it through the wasmtime backend, proving the full loop of
 //! instantiation, allocation, invocation, host calls and envelopes.
 
+mod fixtures;
+
+use fixtures::{arr, obj, s};
+
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -10,23 +14,6 @@ use flower_engine::json::parse_value;
 use flower_engine::runtime::wasm::WasmBackend;
 use flower_engine::storage::GroupStore;
 use flower_sdk::Value;
-
-fn s(text: &str) -> Value {
-    Value::String(text.to_string())
-}
-
-fn obj(pairs: Vec<(&str, Value)>) -> Value {
-    Value::Object(
-        pairs
-            .into_iter()
-            .map(|(key, value)| (key.to_string(), value))
-            .collect(),
-    )
-}
-
-fn arr(items: Vec<Value>) -> Value {
-    Value::Array(items)
-}
 
 fn cargo() -> String {
     option_env!("CARGO")

@@ -25,6 +25,28 @@ use futures::TryStreamExt;
 use object_store::ObjectStoreExt;
 use object_store::memory::InMemory;
 use object_store::path::Path as ObjPath;
+
+/// Open and initialize a single voting member with this suite's runtime.
+async fn single_node(
+    dir: &std::path::Path,
+    registry: &flower_cluster::network::Registry,
+) -> flower_cluster::node::Node {
+    use flower_cluster::network::InProcessFactory;
+    use flower_cluster::node::Node;
+    let node = Node::open(
+        1,
+        &dir.join("n1"),
+        Arc::new(openraft::Config::default()),
+        InProcessFactory::new(registry.clone()),
+        Arc::new(TestFactory),
+    )
+    .await
+    .unwrap();
+    registry.register(1, node.raft().clone());
+    node.initialize(BTreeSet::from([1])).await.unwrap();
+    node
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn backup_restore_roundtrip() {
     let dir = tempfile::tempdir().unwrap();
@@ -1380,22 +1402,12 @@ async fn wait_until(what: &str, mut done: impl FnMut() -> bool) {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn continuous_backup_holds_the_log_and_only_the_leader_backs_up() {
-    use flower_cluster::network::{InProcessFactory, Registry};
-    use flower_cluster::node::Node;
+    use flower_cluster::network::Registry;
+
     use std::sync::atomic::Ordering;
     let dir = tempfile::tempdir().unwrap();
     let registry = Registry::new();
-    let node = Node::open(
-        1,
-        &dir.path().join("n1"),
-        Arc::new(openraft::Config::default()),
-        InProcessFactory::new(registry.clone()),
-        Arc::new(TestFactory),
-    )
-    .await
-    .unwrap();
-    registry.register(1, node.raft().clone());
-    node.initialize(BTreeSet::from([1])).await.unwrap();
+    let node = single_node(dir.path(), &registry).await;
     wait_until("a leader", || node.status().leader == Some(1)).await;
     let incarnation = node.establish_incarnation().await.unwrap();
     node.deploy(b"db", "app", [9u8; 32], b"wasm", &manifest())
@@ -1492,21 +1504,11 @@ async fn continuous_backup_holds_the_log_and_only_the_leader_backs_up() {
 /// complete instead of waiting for the next start to send the tail.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_stopping_leader_archives_what_it_applied_since_its_last_tick() {
-    use flower_cluster::network::{InProcessFactory, Registry};
-    use flower_cluster::node::Node;
+    use flower_cluster::network::Registry;
+
     let dir = tempfile::tempdir().unwrap();
     let registry = Registry::new();
-    let node = Node::open(
-        1,
-        &dir.path().join("n1"),
-        Arc::new(openraft::Config::default()),
-        InProcessFactory::new(registry.clone()),
-        Arc::new(TestFactory),
-    )
-    .await
-    .unwrap();
-    registry.register(1, node.raft().clone());
-    node.initialize(BTreeSet::from([1])).await.unwrap();
+    let node = single_node(dir.path(), &registry).await;
     wait_until("a leader", || node.status().leader == Some(1)).await;
     let incarnation = node.establish_incarnation().await.unwrap();
     node.deploy(b"db", "app", [9u8; 32], b"wasm", &manifest())
@@ -1916,21 +1918,11 @@ async fn a_new_leader_takes_a_base_once_the_archive_outgrows_the_newest() {
 /// both the base bytes and that base, and not before: v1's trigger.
 #[tokio::test(flavor = "multi_thread")]
 async fn the_leader_takes_a_base_once_its_archive_outgrows_the_newest() {
-    use flower_cluster::network::{InProcessFactory, Registry};
-    use flower_cluster::node::Node;
+    use flower_cluster::network::Registry;
+
     let dir = tempfile::tempdir().unwrap();
     let registry = Registry::new();
-    let node = Node::open(
-        1,
-        &dir.path().join("n1"),
-        Arc::new(openraft::Config::default()),
-        InProcessFactory::new(registry.clone()),
-        Arc::new(TestFactory),
-    )
-    .await
-    .unwrap();
-    registry.register(1, node.raft().clone());
-    node.initialize(BTreeSet::from([1])).await.unwrap();
+    let node = single_node(dir.path(), &registry).await;
     wait_until("a leader", || node.status().leader == Some(1)).await;
     node.establish_incarnation().await.unwrap();
     node.deploy(b"db", "app", [9u8; 32], b"wasm", &manifest())
@@ -2082,21 +2074,11 @@ async fn a_base_is_one_cut_while_writes_land_during_its_upload() {
 /// write load kept a few hours of history.
 #[tokio::test(flavor = "multi_thread")]
 async fn retention_keeps_the_window_however_often_bases_come() {
-    use flower_cluster::network::{InProcessFactory, Registry};
-    use flower_cluster::node::Node;
+    use flower_cluster::network::Registry;
+
     let dir = tempfile::tempdir().unwrap();
     let registry = Registry::new();
-    let node = Node::open(
-        1,
-        &dir.path().join("n1"),
-        Arc::new(openraft::Config::default()),
-        InProcessFactory::new(registry.clone()),
-        Arc::new(TestFactory),
-    )
-    .await
-    .unwrap();
-    registry.register(1, node.raft().clone());
-    node.initialize(BTreeSet::from([1])).await.unwrap();
+    let node = single_node(dir.path(), &registry).await;
     wait_until("a leader", || node.status().leader == Some(1)).await;
     node.establish_incarnation().await.unwrap();
     node.deploy(b"db", "app", [9u8; 32], b"wasm", &manifest())
@@ -2426,21 +2408,11 @@ async fn an_upload_dropped_midway_aborts() {
 /// archive gives up past its bound, as v1 bounded its last shipment.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_stalled_store_never_holds_a_stopping_leader_past_its_bound() {
-    use flower_cluster::network::{InProcessFactory, Registry};
-    use flower_cluster::node::Node;
+    use flower_cluster::network::Registry;
+
     let dir = tempfile::tempdir().unwrap();
     let registry = Registry::new();
-    let node = Node::open(
-        1,
-        &dir.path().join("n1"),
-        Arc::new(openraft::Config::default()),
-        InProcessFactory::new(registry.clone()),
-        Arc::new(TestFactory),
-    )
-    .await
-    .unwrap();
-    registry.register(1, node.raft().clone());
-    node.initialize(BTreeSet::from([1])).await.unwrap();
+    let node = single_node(dir.path(), &registry).await;
     wait_until("a leader", || node.status().leader == Some(1)).await;
     let incarnation = node.establish_incarnation().await.unwrap();
     node.deploy(b"db", "app", [9u8; 32], b"wasm", &manifest())

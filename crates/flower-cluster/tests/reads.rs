@@ -3,6 +3,10 @@
 //! reads with bounded staleness, and requests forwarded to the leader
 //! over the member channel.
 
+mod fixtures;
+
+use fixtures::{arr, hc, obj, s, str_schema};
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -16,30 +20,9 @@ use flower_cluster::read::{QUORUM, ReadOptions, ReadSettings, STALE_REPLICA, Ser
 use flower_cluster::statemachine::RuntimeFactory;
 use flower_engine::engine::{CallOptions, MutationOptions};
 use flower_engine::runtime::{CallKind, ClosureRuntime, HostCall};
-use flower_sdk::abi::{HostOp, decode_envelope};
-use flower_sdk::{Failure, Value, fail};
+use flower_sdk::abi::HostOp;
+use flower_sdk::{Value, fail};
 use openraft::{BasicNode, ServerState};
-
-fn s(text: &str) -> Value {
-    Value::String(text.to_string())
-}
-
-fn obj(pairs: Vec<(&str, Value)>) -> Value {
-    Value::Object(
-        pairs
-            .into_iter()
-            .map(|(key, value)| (key.to_string(), value))
-            .collect(),
-    )
-}
-
-fn arr(items: Vec<Value>) -> Value {
-    Value::Array(items)
-}
-
-fn str_schema() -> Value {
-    obj(vec![("type", s("string"))])
-}
 
 /// A definition, with a query's declared consistency when given.
 fn definition(name: &str, kind: &str, consistency: Option<&str>) -> Value {
@@ -104,12 +87,6 @@ fn manifest() -> Value {
         ("triggers", arr(vec![])),
         ("http", arr(vec![])),
     ])
-}
-
-fn hc(host: &mut dyn HostCall, op: HostOp, args: Vec<Value>) -> Result<Value, Failure> {
-    let input = Value::Array(args).encode_binary().unwrap();
-    let output = host.op(op as u32 as u8, &input);
-    decode_envelope(Value::decode_binary(&output).unwrap())
 }
 
 /// The test application: `put {key, title}`, `get {key}`, `local {key}`.

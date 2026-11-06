@@ -1,6 +1,10 @@
 //! Cluster integration: election, replication, deployment, sync
 //! serving and TCP transport.
 
+mod fixtures;
+
+use fixtures::{arr, hc, index, json_schema, k, obj, s, str_schema};
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -19,40 +23,10 @@ use flower_engine::runtime::{CallKind, ClosureRuntime, HostCall};
 use flower_engine::snapshot::{SnapshotMeta, apply_snapshot};
 use flower_engine::storage::GroupStore;
 use flower_engine::timer::TimerState;
-use flower_sdk::abi::{HostOp, decode_envelope};
+use flower_sdk::abi::HostOp;
 use flower_sdk::{Failure, Value, fail};
 use openraft::BasicNode;
 use openraft::storage::{RaftLogStorage, RaftSnapshotBuilder, RaftStateMachine};
-
-fn s(text: &str) -> Value {
-    Value::String(text.to_string())
-}
-
-fn obj(pairs: Vec<(&str, Value)>) -> Value {
-    Value::Object(
-        pairs
-            .into_iter()
-            .map(|(key, value)| (key.to_string(), value))
-            .collect(),
-    )
-}
-
-fn arr(items: Vec<Value>) -> Value {
-    Value::Array(items)
-}
-
-/// Canonical key text for a simple string key.
-fn k(name: &str) -> String {
-    format!("\"{name}\"")
-}
-
-fn str_schema() -> Value {
-    obj(vec![("type", s("string"))])
-}
-
-fn json_schema() -> Value {
-    obj(vec![("type", s("json"))])
-}
 
 fn field(name: &str, schema: Value, optional: bool) -> Value {
     obj(vec![
@@ -64,13 +38,6 @@ fn field(name: &str, schema: Value, optional: bool) -> Value {
 
 fn object_schema(fields: Vec<Value>) -> Value {
     obj(vec![("type", s("object")), ("fields", arr(fields))])
-}
-
-fn index(name: &str, fields: Vec<&str>) -> Value {
-    obj(vec![
-        ("name", s(name)),
-        ("fields", arr(fields.into_iter().map(s).collect())),
-    ])
 }
 
 fn collection(
@@ -152,14 +119,6 @@ fn app_manifest_v2() -> Value {
         vec![tasks_collection(), posts_collection()],
         vec![definition("put", "mutation"), definition("get", "query")],
     )
-}
-
-/// One host call through a closure's handler, decoding the envelope.
-fn hc(host: &mut dyn HostCall, op: HostOp, args: Vec<Value>) -> Result<Value, Failure> {
-    let input = Value::Array(args).encode_binary().unwrap();
-    let output = host.op(op as u32 as u8, &input);
-    let envelope = Value::decode_binary(&output).unwrap();
-    decode_envelope(envelope)
 }
 
 fn opt(value: Value) -> Option<Value> {
@@ -292,6 +251,22 @@ fn config() -> Arc<openraft::Config> {
     Arc::new(openraft::Config::default())
 }
 
+/// Open and initialize a single voting member with this suite's runtime.
+async fn open_single_node(dir: &std::path::Path, registry: &Registry) -> Node {
+    let node = Node::open(
+        1,
+        &dir.join("n1"),
+        config(),
+        InProcessFactory::new(registry.clone()),
+        Arc::new(factory()),
+    )
+    .await
+    .unwrap();
+    registry.register(1, node.raft().clone());
+    node.initialize(BTreeSet::from([1])).await.unwrap();
+    node
+}
+
 /// A member's files record the storage contract they were written under
 /// and never open under another: an in-place upgrade across a contract
 /// bump fails at start, naming both, rather than reading old values or
@@ -411,17 +386,7 @@ fn get_args(key: &str) -> Value {
 async fn single_node_deploy_mutate_query() {
     let dir = tempfile::tempdir().unwrap();
     let registry = Registry::new();
-    let node = Node::open(
-        1,
-        &dir.path().join("n1"),
-        config(),
-        InProcessFactory::new(registry.clone()),
-        Arc::new(factory()),
-    )
-    .await
-    .unwrap();
-    registry.register(1, node.raft().clone());
-    node.initialize(BTreeSet::from([1])).await.unwrap();
+    let node = open_single_node(dir.path(), &registry).await;
     assert_eq!(wait_leader(&[&node]).await, 1);
 
     node.deploy(b"db", "app", [9u8; 32], b"wasm-v1", &app_manifest())
@@ -472,17 +437,7 @@ async fn single_node_deploy_mutate_query() {
 async fn transaction_commits_two_databases_through_consensus() {
     let dir = tempfile::tempdir().unwrap();
     let registry = Registry::new();
-    let node = Node::open(
-        1,
-        &dir.path().join("n1"),
-        config(),
-        InProcessFactory::new(registry.clone()),
-        Arc::new(factory()),
-    )
-    .await
-    .unwrap();
-    registry.register(1, node.raft().clone());
-    node.initialize(BTreeSet::from([1])).await.unwrap();
+    let node = open_single_node(dir.path(), &registry).await;
     assert_eq!(wait_leader(&[&node]).await, 1);
 
     for db in [b"dba".as_slice(), b"dbb".as_slice()] {
@@ -551,17 +506,7 @@ async fn transaction_commits_two_databases_through_consensus() {
 async fn transaction_aborts_without_proposing() {
     let dir = tempfile::tempdir().unwrap();
     let registry = Registry::new();
-    let node = Node::open(
-        1,
-        &dir.path().join("n1"),
-        config(),
-        InProcessFactory::new(registry.clone()),
-        Arc::new(factory()),
-    )
-    .await
-    .unwrap();
-    registry.register(1, node.raft().clone());
-    node.initialize(BTreeSet::from([1])).await.unwrap();
+    let node = open_single_node(dir.path(), &registry).await;
     assert_eq!(wait_leader(&[&node]).await, 1);
 
     for db in [b"dba".as_slice(), b"dbb".as_slice()] {
@@ -616,17 +561,7 @@ async fn transaction_aborts_without_proposing() {
 async fn restart_replays_idempotency_key() {
     let dir = tempfile::tempdir().unwrap();
     let registry = Registry::new();
-    let node = Node::open(
-        1,
-        &dir.path().join("n1"),
-        config(),
-        InProcessFactory::new(registry.clone()),
-        Arc::new(factory()),
-    )
-    .await
-    .unwrap();
-    registry.register(1, node.raft().clone());
-    node.initialize(BTreeSet::from([1])).await.unwrap();
+    let node = open_single_node(dir.path(), &registry).await;
     assert_eq!(wait_leader(&[&node]).await, 1);
     node.deploy(b"db", "app", [9u8; 32], b"wasm-v1", &app_manifest())
         .await
@@ -685,17 +620,7 @@ async fn restart_replays_idempotency_key() {
 async fn purge_expired_idempotency_runs() {
     let dir = tempfile::tempdir().unwrap();
     let registry = Registry::new();
-    let node = Node::open(
-        1,
-        &dir.path().join("n1"),
-        config(),
-        InProcessFactory::new(registry.clone()),
-        Arc::new(factory()),
-    )
-    .await
-    .unwrap();
-    registry.register(1, node.raft().clone());
-    node.initialize(BTreeSet::from([1])).await.unwrap();
+    let node = open_single_node(dir.path(), &registry).await;
     assert_eq!(wait_leader(&[&node]).await, 1);
     node.deploy(b"db", "app", [9u8; 32], b"wasm-v1", &app_manifest())
         .await
@@ -758,17 +683,7 @@ async fn purge_expired_idempotency_runs() {
 async fn concurrent_duplicates_commit_once() {
     let dir = tempfile::tempdir().unwrap();
     let registry = Registry::new();
-    let node = Node::open(
-        1,
-        &dir.path().join("n1"),
-        config(),
-        InProcessFactory::new(registry.clone()),
-        Arc::new(factory()),
-    )
-    .await
-    .unwrap();
-    registry.register(1, node.raft().clone());
-    node.initialize(BTreeSet::from([1])).await.unwrap();
+    let node = open_single_node(dir.path(), &registry).await;
     assert_eq!(wait_leader(&[&node]).await, 1);
     node.deploy(b"db", "app", [9u8; 32], b"wasm-v1", &app_manifest())
         .await
@@ -1163,17 +1078,7 @@ fn schedule_args(id: &str, due_ms: f64, handler: &str, args: Value, max: f64) ->
 async fn single_node_timer_fires_through_consensus() {
     let dir = tempfile::tempdir().unwrap();
     let registry = Registry::new();
-    let node = Node::open(
-        1,
-        &dir.path().join("n1"),
-        config(),
-        InProcessFactory::new(registry.clone()),
-        Arc::new(factory()),
-    )
-    .await
-    .unwrap();
-    registry.register(1, node.raft().clone());
-    node.initialize(BTreeSet::from([1])).await.unwrap();
+    let node = open_single_node(dir.path(), &registry).await;
     assert_eq!(wait_leader(&[&node]).await, 1);
     node.deploy(b"db", "app", [9u8; 32], b"wasm-v1", &app_manifest())
         .await
@@ -1214,17 +1119,7 @@ async fn single_node_timer_fires_through_consensus() {
 async fn timer_sweep_fires_due_and_skips_future() {
     let dir = tempfile::tempdir().unwrap();
     let registry = Registry::new();
-    let node = Node::open(
-        1,
-        &dir.path().join("n1"),
-        config(),
-        InProcessFactory::new(registry.clone()),
-        Arc::new(factory()),
-    )
-    .await
-    .unwrap();
-    registry.register(1, node.raft().clone());
-    node.initialize(BTreeSet::from([1])).await.unwrap();
+    let node = open_single_node(dir.path(), &registry).await;
     assert_eq!(wait_leader(&[&node]).await, 1);
     node.deploy(b"db", "app", [9u8; 32], b"wasm-v1", &app_manifest())
         .await
@@ -1272,17 +1167,7 @@ async fn timer_sweep_fires_due_and_skips_future() {
 async fn timer_sweep_leaves_a_frozen_database_and_fires_the_others() {
     let dir = tempfile::tempdir().unwrap();
     let registry = Registry::new();
-    let node = Node::open(
-        1,
-        &dir.path().join("n1"),
-        config(),
-        InProcessFactory::new(registry.clone()),
-        Arc::new(factory()),
-    )
-    .await
-    .unwrap();
-    registry.register(1, node.raft().clone());
-    node.initialize(BTreeSet::from([1])).await.unwrap();
+    let node = open_single_node(dir.path(), &registry).await;
     assert_eq!(wait_leader(&[&node]).await, 1);
     for db in [b"a", b"b"] {
         node.deploy(db, "app", [9u8; 32], b"wasm-v1", &app_manifest())
@@ -1331,17 +1216,7 @@ async fn timer_sweep_leaves_a_frozen_database_and_fires_the_others() {
 async fn timer_sweep_holds_a_removed_module_s_timers_until_it_returns() {
     let dir = tempfile::tempdir().unwrap();
     let registry = Registry::new();
-    let node = Node::open(
-        1,
-        &dir.path().join("n1"),
-        config(),
-        InProcessFactory::new(registry.clone()),
-        Arc::new(factory()),
-    )
-    .await
-    .unwrap();
-    registry.register(1, node.raft().clone());
-    node.initialize(BTreeSet::from([1])).await.unwrap();
+    let node = open_single_node(dir.path(), &registry).await;
     assert_eq!(wait_leader(&[&node]).await, 1);
     for module in ["app", "side"] {
         node.deploy(b"db", module, [9u8; 32], b"wasm-v1", &app_manifest())
@@ -1402,17 +1277,7 @@ async fn timer_sweep_holds_a_removed_module_s_timers_until_it_returns() {
 async fn failed_timer_fire_retries_then_dies() {
     let dir = tempfile::tempdir().unwrap();
     let registry = Registry::new();
-    let node = Node::open(
-        1,
-        &dir.path().join("n1"),
-        config(),
-        InProcessFactory::new(registry.clone()),
-        Arc::new(factory()),
-    )
-    .await
-    .unwrap();
-    registry.register(1, node.raft().clone());
-    node.initialize(BTreeSet::from([1])).await.unwrap();
+    let node = open_single_node(dir.path(), &registry).await;
     assert_eq!(wait_leader(&[&node]).await, 1);
     node.deploy(b"db", "app", [9u8; 32], b"wasm-v1", &app_manifest())
         .await
@@ -1532,17 +1397,7 @@ where
 /// Open an initialized single in-process node with the test app deployed.
 async fn single_node(dir: &std::path::Path) -> (Registry, Node) {
     let registry = Registry::new();
-    let node = Node::open(
-        1,
-        &dir.join("n1"),
-        config(),
-        InProcessFactory::new(registry.clone()),
-        Arc::new(factory()),
-    )
-    .await
-    .unwrap();
-    registry.register(1, node.raft().clone());
-    node.initialize(BTreeSet::from([1])).await.unwrap();
+    let node = open_single_node(dir, &registry).await;
     assert_eq!(wait_leader(&[&node]).await, 1);
     node.deploy(b"db", "app", [9u8; 32], b"wasm-v1", &app_manifest())
         .await
@@ -2501,17 +2356,7 @@ async fn deploy_replaces_a_stale_staging() {
     // next deployment of the module must replace it, not refuse.
     let dir = tempfile::tempdir().unwrap();
     let registry = Registry::new();
-    let node = Node::open(
-        1,
-        &dir.path().join("n1"),
-        config(),
-        InProcessFactory::new(registry.clone()),
-        Arc::new(factory()),
-    )
-    .await
-    .unwrap();
-    registry.register(1, node.raft().clone());
-    node.initialize(BTreeSet::from([1])).await.unwrap();
+    let node = open_single_node(dir.path(), &registry).await;
     assert_eq!(wait_leader(&[&node]).await, 1);
     node.deploy(b"db", "app", [9u8; 32], b"wasm-v1", &app_manifest())
         .await

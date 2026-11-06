@@ -2,6 +2,12 @@
 //! revisions, snapshots, the intent log and intent preview, driven
 //! through [`Engine`] with in-process closure runtimes.
 
+mod fixtures;
+
+use fixtures::{
+    Guest, arr, field, hc, index, json_schema, k, n, num_schema, obj, object_schema, s, str_schema,
+};
+
 use flower_engine::engine::{
     ApplyOutcome, CallOptions, Engine, MutationOptions, PrepareOutcome, RetryIdentity,
 };
@@ -12,75 +18,8 @@ use flower_engine::runtime::{CallKind, ClosureRuntime, HostCall};
 use flower_engine::snapshot;
 use flower_engine::storage::GroupStore;
 use flower_engine::storage::meta;
-use flower_sdk::abi::{HostOp, decode_envelope};
+use flower_sdk::abi::HostOp;
 use flower_sdk::{Failure, Value, fail};
-
-/// The closure signature every test runtime implements.
-trait Guest:
-    Fn(CallKind, &str, &str, &Value, &mut dyn HostCall) -> Result<Value, Failure> + Send
-{
-}
-
-impl<F> Guest for F where
-    F: Fn(CallKind, &str, &str, &Value, &mut dyn HostCall) -> Result<Value, Failure> + Send
-{
-}
-
-fn s(text: &str) -> Value {
-    Value::String(text.to_string())
-}
-
-fn n(num: f64) -> Value {
-    Value::Number(num)
-}
-
-fn obj(pairs: Vec<(&str, Value)>) -> Value {
-    Value::Object(
-        pairs
-            .into_iter()
-            .map(|(key, value)| (key.to_string(), value))
-            .collect(),
-    )
-}
-
-fn arr(items: Vec<Value>) -> Value {
-    Value::Array(items)
-}
-
-fn k(name: &str) -> String {
-    format!("\"{name}\"")
-}
-
-fn str_schema() -> Value {
-    obj(vec![("type", s("string"))])
-}
-
-fn num_schema() -> Value {
-    obj(vec![("type", s("number"))])
-}
-
-fn json_schema() -> Value {
-    obj(vec![("type", s("json"))])
-}
-
-fn field(name: &str, schema: Value, optional: bool) -> Value {
-    obj(vec![
-        ("name", s(name)),
-        ("schema", schema),
-        ("optional", Value::Bool(optional)),
-    ])
-}
-
-fn object_schema(fields: Vec<Value>) -> Value {
-    obj(vec![("type", s("object")), ("fields", arr(fields))])
-}
-
-fn index(name: &str, fields: Vec<&str>) -> Value {
-    obj(vec![
-        ("name", s(name)),
-        ("fields", arr(fields.into_iter().map(s).collect())),
-    ])
-}
 
 fn cells_manifest() -> Value {
     obj(vec![
@@ -140,13 +79,6 @@ fn setup(test: &str) -> (Engine, std::path::PathBuf) {
 fn teardown(engine: Engine, path: std::path::PathBuf) {
     drop(engine);
     let _ = std::fs::remove_file(&path);
-}
-
-fn hc(host: &mut dyn HostCall, op: HostOp, args: Vec<Value>) -> Result<Value, Failure> {
-    let input = Value::Array(args).encode_binary().unwrap();
-    let output = host.op(op as u32 as u8, &input);
-    let envelope = Value::decode_binary(&output).unwrap();
-    decode_envelope(envelope)
 }
 
 fn set(host: &mut dyn HostCall, collection: &str, key: &str, value: Value) -> Result<(), Failure> {

@@ -14,6 +14,10 @@
 
 extern crate alloc;
 
+mod fixtures;
+
+use fixtures::{hc, s};
+
 use std::hint::black_box;
 use std::sync::Arc;
 use std::time::Instant;
@@ -23,7 +27,7 @@ use flower_crypto::jwt::{Algorithm, KeyFormat, SignOptions};
 use flower_engine::engine::{CallOptions, Engine, MutationOptions};
 use flower_engine::runtime::{CallKind, ClosureRuntime, HostCall, NativeRuntime};
 use flower_engine::storage::GroupStore;
-use flower_sdk::abi::{HostOp, decode_envelope};
+use flower_sdk::abi::HostOp;
 use flower_sdk::{Failure, Principal, Value, fail};
 
 mod app {
@@ -134,21 +138,11 @@ fn kept_decisions_against_running_the_hook() {
     let _ = std::fs::remove_file(&path);
 }
 
-fn s(text: &str) -> Value {
-    Value::String(text.to_string())
-}
-
 fn field<'a>(value: &'a Value, name: &str) -> &'a Value {
     value
         .as_object()
         .and_then(|map| map.get(name))
         .unwrap_or(&Value::Null)
-}
-
-fn hc(host: &mut dyn HostCall, op: HostOp, args: Vec<Value>) -> Result<Value, Failure> {
-    let input = Value::Array(args).encode_binary().unwrap();
-    let output = host.op(op as u32 as u8, &input);
-    decode_envelope(Value::decode_binary(&output).unwrap())
 }
 
 fn scans(

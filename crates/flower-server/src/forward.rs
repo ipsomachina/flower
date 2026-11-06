@@ -200,7 +200,7 @@ pub(crate) struct Forwarded {
 /// `class` budget: a declared length is leased whole before reading, an
 /// undeclared body as it arrives. Too large answers 413; no room in the
 /// budget answers a retryable 503 `overloaded`.
-async fn buffer(
+pub(crate) async fn buffer(
     state: &AppState,
     class: Class,
     headers: &axum::http::HeaderMap,

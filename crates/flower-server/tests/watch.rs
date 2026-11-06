@@ -3,6 +3,10 @@
 //! clock polls refresh without commits, and subscribers that ask get
 //! JSON Patch deltas against the value they hold.
 
+mod fixtures;
+
+use fixtures::{field, hc, obj, s};
+
 use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -13,41 +17,14 @@ use flower_cluster::node::Node;
 use flower_cluster::statemachine::RuntimeFactory;
 use flower_engine::engine::CallOptions;
 use flower_engine::runtime::{CallKind, ClosureRuntime, HostCall};
-use flower_sdk::abi::{HostOp, decode_envelope};
+use flower_sdk::abi::HostOp;
 use flower_sdk::{Failure, Value, fail};
 use flower_server::api::{AppState, serve};
 use flower_server::watch::{Hub, HubEvent, HubMessage};
 use tokio::sync::mpsc;
 
-fn s(text: &str) -> Value {
-    Value::String(text.to_string())
-}
-
 fn n(num: f64) -> Value {
     Value::Number(num)
-}
-
-fn obj(pairs: Vec<(&str, Value)>) -> Value {
-    Value::Object(
-        pairs
-            .into_iter()
-            .map(|(key, value)| (key.to_string(), value))
-            .collect(),
-    )
-}
-
-fn hc(host: &mut dyn HostCall, op: HostOp, args: Vec<Value>) -> Result<Value, Failure> {
-    let input = Value::Array(args).encode_binary().unwrap();
-    let output = host.op(op as u32 as u8, &input);
-    let envelope = Value::decode_binary(&output).unwrap();
-    decode_envelope(envelope)
-}
-
-fn field(args: &Value, name: &str) -> Value {
-    match args {
-        Value::Object(map) => map.get(name).cloned().unwrap_or(Value::Null),
-        _ => Value::Null,
-    }
 }
 
 /// Canonical key text of the `key` argument.

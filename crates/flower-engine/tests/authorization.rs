@@ -7,6 +7,10 @@
 //! maps `{"token": …}` credentials to the session's subject, tenant and
 //! role and refuses everything else, except the public `grant`/`revoke`.
 
+mod fixtures;
+
+use fixtures::{hc, k, n, obj, s};
+
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -16,41 +20,14 @@ use flower_engine::engine::{
 use flower_engine::retry::ScopedIdentity;
 use flower_engine::runtime::{CallKind, HostCall, Runtime};
 use flower_engine::storage::GroupStore;
-use flower_sdk::abi::{HostOp, decode_envelope};
+use flower_sdk::abi::HostOp;
 use flower_sdk::{CallFailure, Failure, Principal, Value, fail};
-
-fn s(text: &str) -> Value {
-    Value::String(text.to_string())
-}
-
-fn n(num: f64) -> Value {
-    Value::Number(num)
-}
-
-fn obj(pairs: Vec<(&str, Value)>) -> Value {
-    Value::Object(
-        pairs
-            .into_iter()
-            .map(|(key, value)| (key.to_string(), value))
-            .collect(),
-    )
-}
-
-fn k(name: &str) -> String {
-    format!("\"{name}\"")
-}
 
 fn field<'a>(value: &'a Value, name: &str) -> &'a Value {
     value
         .as_object()
         .and_then(|map| map.get(name))
         .unwrap_or(&Value::Null)
-}
-
-fn hc(host: &mut dyn HostCall, op: HostOp, args: Vec<Value>) -> Result<Value, Failure> {
-    let input = Value::Array(args).encode_binary().unwrap();
-    let output = host.op(op as u32 as u8, &input);
-    decode_envelope(Value::decode_binary(&output).unwrap())
 }
 
 fn get(host: &mut dyn HostCall, collection: &str, key: &str) -> Result<Value, Failure> {

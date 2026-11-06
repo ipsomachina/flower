@@ -1,6 +1,10 @@
 //! PITR tests: archive committed entries, recover to a target on
 //! a new cluster.
 
+mod fixtures;
+
+use fixtures::{arr, hc, json_schema, k, obj, s, str_schema};
+
 use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::time::Duration;
@@ -21,35 +25,6 @@ use flower_engine::storage::GroupStore;
 use flower_engine::storage::meta;
 use flower_sdk::abi::{HostOp, decode_envelope};
 use flower_sdk::{Failure, Value, fail};
-
-fn s(text: &str) -> Value {
-    Value::String(text.to_string())
-}
-
-fn obj(pairs: Vec<(&str, Value)>) -> Value {
-    Value::Object(
-        pairs
-            .into_iter()
-            .map(|(key, value)| (key.to_string(), value))
-            .collect(),
-    )
-}
-
-fn arr(items: Vec<Value>) -> Value {
-    Value::Array(items)
-}
-
-fn k(name: &str) -> String {
-    format!("\"{name}\"")
-}
-
-fn str_schema() -> Value {
-    obj(vec![("type", s("string"))])
-}
-
-fn json_schema() -> Value {
-    obj(vec![("type", s("json"))])
-}
 
 fn manifest() -> Value {
     obj(vec![
@@ -94,13 +69,6 @@ fn manifest() -> Value {
         ("triggers", arr(vec![])),
         ("http", arr(vec![])),
     ])
-}
-
-fn hc(host: &mut dyn HostCall, op: HostOp, args: Vec<Value>) -> Result<Value, Failure> {
-    let input = Value::Array(args).encode_binary().unwrap();
-    let output = host.op(op as u32 as u8, &input);
-    let envelope = Value::decode_binary(&output).unwrap();
-    decode_envelope(envelope)
 }
 
 fn handler(
@@ -181,13 +149,11 @@ fn get_args(key: &str) -> Value {
     obj(vec![("key", s(&k(key)))])
 }
 
-#[tokio::test(flavor = "multi_thread")]
-async fn pitr_recovers_new_cluster_to_target() {
-    let dir = tempfile::tempdir().unwrap();
-    let registry = Registry::new();
+/// Open and initialize a single voting member with this suite's runtime.
+async fn single_node(dir: &std::path::Path, registry: &Registry) -> Node {
     let node = Node::open(
         1,
-        &dir.path().join("n1"),
+        &dir.join("n1"),
         Arc::new(openraft::Config::default()),
         InProcessFactory::new(registry.clone()),
         Arc::new(TestFactory),
@@ -196,6 +162,14 @@ async fn pitr_recovers_new_cluster_to_target() {
     .unwrap();
     registry.register(1, node.raft().clone());
     node.initialize(BTreeSet::from([1])).await.unwrap();
+    node
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn pitr_recovers_new_cluster_to_target() {
+    let dir = tempfile::tempdir().unwrap();
+    let registry = Registry::new();
+    let node = single_node(dir.path(), &registry).await;
     assert_eq!(wait_leader(&node).await, 1);
     // Archives are kept per history: maintenance would establish it.
     let incarnation = node.establish_incarnation().await.unwrap();
@@ -409,17 +383,7 @@ async fn propose_at(node: &Node, patch: Vec<u8>, proposed_ms: u64) -> WriteRespo
 async fn pitr_reads_receipt_expiry_at_the_replicated_clock() {
     let dir = tempfile::tempdir().unwrap();
     let registry = Registry::new();
-    let node = Node::open(
-        1,
-        &dir.path().join("n1"),
-        Arc::new(openraft::Config::default()),
-        InProcessFactory::new(registry.clone()),
-        Arc::new(TestFactory),
-    )
-    .await
-    .unwrap();
-    registry.register(1, node.raft().clone());
-    node.initialize(BTreeSet::from([1])).await.unwrap();
+    let node = single_node(dir.path(), &registry).await;
     assert_eq!(wait_leader(&node).await, 1);
     node.establish_incarnation().await.unwrap();
     node.deploy(b"db", "app", [9u8; 32], b"wasm-v1", &manifest())
@@ -829,17 +793,7 @@ async fn a_member_caught_up_by_snapshot_takes_a_base_and_archives_on() {
 async fn restore_registers_a_database_deployed_after_the_base() {
     let dir = tempfile::tempdir().unwrap();
     let registry = Registry::new();
-    let node = Node::open(
-        1,
-        &dir.path().join("n1"),
-        Arc::new(openraft::Config::default()),
-        InProcessFactory::new(registry.clone()),
-        Arc::new(TestFactory),
-    )
-    .await
-    .unwrap();
-    registry.register(1, node.raft().clone());
-    node.initialize(BTreeSet::from([1])).await.unwrap();
+    let node = single_node(dir.path(), &registry).await;
     assert_eq!(wait_leader(&node).await, 1);
     node.establish_incarnation().await.unwrap();
 
@@ -951,17 +905,7 @@ async fn scoped_put(
 async fn a_restore_starts_a_new_history_that_refuses_the_old_ones_requests() {
     let dir = tempfile::tempdir().unwrap();
     let registry = Registry::new();
-    let node = Node::open(
-        1,
-        &dir.path().join("n1"),
-        Arc::new(openraft::Config::default()),
-        InProcessFactory::new(registry.clone()),
-        Arc::new(TestFactory),
-    )
-    .await
-    .unwrap();
-    registry.register(1, node.raft().clone());
-    node.initialize(BTreeSet::from([1])).await.unwrap();
+    let node = single_node(dir.path(), &registry).await;
     assert_eq!(wait_leader(&node).await, 1);
     let old = node.establish_incarnation().await.unwrap();
     node.deploy(b"db", "app", [9u8; 32], b"wasm-v1", &manifest())
@@ -1089,17 +1033,7 @@ async fn a_restore_starts_a_new_history_that_refuses_the_old_ones_requests() {
 async fn pitr_replays_scoped_writes_made_after_the_base() {
     let dir = tempfile::tempdir().unwrap();
     let registry = Registry::new();
-    let node = Node::open(
-        1,
-        &dir.path().join("n1"),
-        Arc::new(openraft::Config::default()),
-        InProcessFactory::new(registry.clone()),
-        Arc::new(TestFactory),
-    )
-    .await
-    .unwrap();
-    registry.register(1, node.raft().clone());
-    node.initialize(BTreeSet::from([1])).await.unwrap();
+    let node = single_node(dir.path(), &registry).await;
     assert_eq!(wait_leader(&node).await, 1);
     let old = node.establish_incarnation().await.unwrap();
     node.deploy(b"db", "app", [9u8; 32], b"wasm-v1", &manifest())

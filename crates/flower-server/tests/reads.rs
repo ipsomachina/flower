@@ -2,6 +2,10 @@
 //! queries the way they declare and forwards what only the leader can
 //! serve; replies name the leader's API and replica-local staleness.
 
+mod fixtures;
+
+use fixtures::{hc, read_dispatch, s};
+
 use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::time::Duration;
@@ -10,21 +14,11 @@ use flower_cluster::network::{InProcessFactory, Registry};
 use flower_cluster::node::Node;
 use flower_cluster::statemachine::RuntimeFactory;
 use flower_engine::runtime::{CallKind, ClosureRuntime, HostCall};
-use flower_sdk::abi::{HostOp, decode_envelope};
-use flower_sdk::{Failure, Value, fail};
+use flower_sdk::abi::HostOp;
+use flower_sdk::{Value, fail};
 use flower_server::api::{AppState, serve};
 use flower_server::forward::{LEADER_URL, MAX_STALENESS, STALENESS};
 use openraft::ServerState;
-
-fn s(text: &str) -> Value {
-    Value::String(text.to_string())
-}
-
-fn hc(host: &mut dyn HostCall, op: HostOp, args: Vec<Value>) -> Result<Value, Failure> {
-    let input = Value::Array(args).encode_binary().unwrap();
-    let output = host.op(op as u32 as u8, &input);
-    decode_envelope(Value::decode_binary(&output).unwrap())
-}
 
 /// `put {key, title}`, linearizable `get {key}`, replica-local
 /// `local {key}`, and `bounded {key}` within 200 ms.
@@ -426,25 +420,6 @@ async fn replies_name_the_leaders_api() {
             "{base}"
         );
     }
-}
-
-/// Read one blank-line-delimited SSE dispatch.
-async fn read_dispatch(response: &mut reqwest::Response) -> String {
-    let mut buffered = Vec::new();
-    tokio::time::timeout(Duration::from_secs(10), async {
-        loop {
-            let Some(chunk) = response.chunk().await.unwrap() else {
-                panic!("stream ended mid-dispatch");
-            };
-            buffered.extend_from_slice(&chunk);
-            if buffered.windows(2).any(|pair| pair == b"\n\n") {
-                return;
-            }
-        }
-    })
-    .await
-    .unwrap();
-    String::from_utf8(buffered).unwrap()
 }
 
 #[tokio::test(flavor = "multi_thread")]

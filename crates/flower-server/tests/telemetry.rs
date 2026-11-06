@@ -5,6 +5,10 @@
 //! credential, argument or stored value. Its own test binary: the
 //! subscriber and meter provider are process-wide.
 
+mod fixtures;
+
+use fixtures::{hc, s};
+
 use std::collections::{BTreeSet, HashSet};
 use std::future::IntoFuture;
 use std::sync::{Arc, Mutex};
@@ -17,23 +21,13 @@ use flower_cluster::network::{InProcessFactory, Registry};
 use flower_cluster::node::Node;
 use flower_cluster::statemachine::RuntimeFactory;
 use flower_engine::runtime::{CallKind, ClosureRuntime, HostCall};
-use flower_sdk::abi::{HostOp, decode_envelope};
+use flower_sdk::abi::HostOp;
 use flower_sdk::{Failure, Value, fail};
 use flower_server::api::{AppState, serve};
 use flower_server::telemetry::{OtelConfig, init_with};
 use opentelemetry_otlp::Protocol;
 use opentelemetry_sdk::trace::Sampler;
 use serde_json::Value as Json;
-
-fn s(text: &str) -> Value {
-    Value::String(text.to_string())
-}
-
-fn hc(host: &mut dyn HostCall, op: HostOp, args: Vec<Value>) -> Result<Value, Failure> {
-    let input = Value::Array(args).encode_binary().unwrap();
-    let output = host.op(op as u32 as u8, &input);
-    decode_envelope(Value::decode_binary(&output).unwrap())
-}
 
 /// Answers `ping` with `pong`, `put {key, title}` and `get {key}`.
 struct App;

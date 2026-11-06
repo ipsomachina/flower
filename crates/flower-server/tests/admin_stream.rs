@@ -3,6 +3,10 @@
 //! the rest as they happen, over three live members, without costing the
 //! cluster reads or forwards.
 
+mod fixtures;
+
+use fixtures::{hc, s};
+
 use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -14,22 +18,12 @@ use flower_crypto::replicated::{ManagedKeys, WrappingKey};
 use flower_engine::engine::MutationOptions;
 use flower_engine::retention::RetentionCommand;
 use flower_engine::runtime::{CallKind, ClosureRuntime, HostCall};
-use flower_sdk::abi::{HostOp, decode_envelope};
-use flower_sdk::{Failure, Value, fail};
+use flower_sdk::abi::HostOp;
+use flower_sdk::{Value, fail};
 use flower_server::admin_stream::{MAX_INTERVAL_MS, MAX_STREAMS, MIN_INTERVAL_MS};
 use flower_server::api::{AppState, serve_until};
 use openraft::ServerState;
 use serde_json::json;
-
-fn s(text: &str) -> Value {
-    Value::String(text.to_string())
-}
-
-fn hc(host: &mut dyn HostCall, op: HostOp, args: Vec<Value>) -> Result<Value, Failure> {
-    let input = Value::Array(args).encode_binary().unwrap();
-    let output = host.op(op as u32 as u8, &input);
-    decode_envelope(Value::decode_binary(&output).unwrap())
-}
 
 /// `put {key, title}`.
 struct App;
