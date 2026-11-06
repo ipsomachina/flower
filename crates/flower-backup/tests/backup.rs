@@ -1994,18 +1994,17 @@ async fn the_leader_takes_a_base_once_its_archive_outgrows_the_newest() {
     tokio::time::sleep(Duration::from_millis(100)).await;
     assert_eq!(driver.continuous_status().bases_taken, 1);
 
-    // Writes whose segments outgrow the base make the next one due.
-    let mut last = b;
-    for (key, seed) in [("c", 2), ("d", 3), ("e", 4), ("f", 5)] {
-        last = put(key, noise(6000, seed)).await;
-    }
+    // One write outgrows the base and makes exactly one more due.
+    // Several writes can straddle backup ticks and trigger a third
+    // base before the assertion, depending on scheduling.
+    let last = put("c", noise(24_000, 2)).await;
     wait_until("the second base", || {
-        driver.continuous_status().bases_taken == 2
+        driver.continuous_status().bases_taken >= 2
     })
     .await;
     let second = driver.continuous_status().newest_base.unwrap();
     assert!(second.covered_index > first.covered_index);
-    assert!(second.covered_index <= last);
+    assert_eq!(second.covered_index, last);
     stop.send(true).unwrap();
     running.await.unwrap().unwrap();
     assert_eq!(manifest_names(&store).await.len(), 2);

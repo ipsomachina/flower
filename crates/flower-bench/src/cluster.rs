@@ -247,10 +247,22 @@ impl Cluster {
             .tempdir_in(&parent)
             .map_err(|error| format!("data directory: {error}"))?;
         let wrapping = if spec.crypto {
+            use std::io::Write;
+
             let mut key = [0u8; 32];
             getrandom::getrandom(&mut key).map_err(|error| format!("randomness: {error}"))?;
             let path = dir.path().join("key-wrapping.bin");
-            std::fs::write(&path, key).map_err(|error| format!("{}: {error}", path.display()))?;
+            let mut options = std::fs::OpenOptions::new();
+            options.write(true).create_new(true);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt;
+                options.mode(0o600);
+            }
+            options
+                .open(&path)
+                .and_then(|mut file| file.write_all(&key))
+                .map_err(|error| format!("{}: {error}", path.display()))?;
             Some(path)
         } else {
             None

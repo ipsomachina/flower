@@ -1628,6 +1628,11 @@ async fn a_move_waits_for_its_destination_to_mount_the_wrapping_key() {
     let cluster = start_groups("keyed-move").await;
     let wrong = cluster.data_dir().join("wrong-wrapping.bin");
     std::fs::write(&wrong, [0x5a; 32]).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&wrong, std::fs::Permissions::from_mode(0o600)).unwrap();
+    }
     cluster.kill(WEST).await.unwrap();
     cluster.mount_wrapping(WEST, Some(wrong));
     cluster.restart(WEST).unwrap();

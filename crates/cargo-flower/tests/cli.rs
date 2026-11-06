@@ -2,6 +2,8 @@
 //! a serve round-trip (boot, status, deploy, membership) against a
 //! real node subprocess.
 
+mod common;
+
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
@@ -261,7 +263,7 @@ fn manifest_timer() -> serde_json::Value {
 /// guests' crypto host, over every database's key catalog.
 fn wrapping_key(dir: &std::path::Path) -> String {
     let path = dir.join("wrapping.key");
-    std::fs::write(&path, [7u8; 32]).unwrap();
+    common::write_key(&path, &[7u8; 32]);
     path.to_str().unwrap().to_string()
 }
 
@@ -299,7 +301,7 @@ async fn boot(dir: &std::path::Path, node: &str, timer_sweep_ms: &str) -> Booted
             timer_sweep_ms,
         ])
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+        .stderr(Stdio::inherit())
         .kill_on_drop(true)
         .spawn()
         .unwrap();
@@ -514,7 +516,7 @@ async fn serve_roundtrip() {
             "2097152",
         ])
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+        .stderr(Stdio::inherit())
         .kill_on_drop(true)
         .spawn()
         .unwrap();
@@ -845,7 +847,7 @@ async fn queue_lifecycle() {
             &wrapping,
         ])
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+        .stderr(Stdio::inherit())
         .kill_on_drop(true)
         .spawn()
         .unwrap();
@@ -1458,7 +1460,7 @@ async fn serve_member(
         .envs(envs.iter().copied())
         .args(&args)
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+        .stderr(Stdio::inherit())
         .kill_on_drop(true)
         .spawn()
         .unwrap();

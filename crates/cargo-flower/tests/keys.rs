@@ -4,6 +4,8 @@
 //! lifecycle against it, and `cargo flower retention` reads a
 //! database's retention.
 
+mod common;
+
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
@@ -60,7 +62,7 @@ async fn serve_seals_catalog_keys_under_the_mounted_wrapping_key() {
     let dir = tempfile::tempdir().unwrap();
     // A key file that is not 32 bytes refuses to boot.
     let short = dir.path().join("short.key");
-    std::fs::write(&short, [1u8; 16]).unwrap();
+    common::write_key(&short, &[1u8; 16]);
     let refused = Command::new(bin())
         .args(serve_args(
             dir.path().join("refused").to_str().unwrap(),
@@ -69,9 +71,11 @@ async fn serve_seals_catalog_keys_under_the_mounted_wrapping_key() {
         .output()
         .unwrap();
     assert!(!refused.status.success());
+    let error = String::from_utf8_lossy(&refused.stderr);
+    assert!(error.contains("exactly 32 raw bytes"), "{error}");
 
     let wrapping = dir.path().join("wrapping.key");
-    std::fs::write(&wrapping, [6u8; 32]).unwrap();
+    common::write_key(&wrapping, &[6u8; 32]);
     let node_dir = dir.path().join("node");
     let mut child = tokio::process::Command::new(bin())
         .args(serve_args(
@@ -79,7 +83,7 @@ async fn serve_seals_catalog_keys_under_the_mounted_wrapping_key() {
             wrapping.to_str().unwrap(),
         ))
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+        .stderr(Stdio::inherit())
         .kill_on_drop(true)
         .spawn()
         .unwrap();

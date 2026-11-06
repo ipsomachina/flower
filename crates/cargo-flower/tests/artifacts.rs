@@ -2,6 +2,8 @@
 //! example guests, and the crypto-ticket example end to end against a
 //! served node.
 
+mod common;
+
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::time::Duration;
@@ -136,7 +138,7 @@ fn build_writes_inspected_artifacts_and_plan_checks_them() {
 /// mounted) and return it with its endpoint once it leads.
 async fn serve(dir: &Path) -> (tokio::process::Child, String) {
     let wrapping = dir.join("wrapping.key");
-    std::fs::write(&wrapping, [7u8; 32]).unwrap();
+    common::write_key(&wrapping, &[7u8; 32]);
     let mut child = tokio::process::Command::new(bin())
         .args([
             "serve",
@@ -159,7 +161,7 @@ async fn serve(dir: &Path) -> (tokio::process::Child, String) {
         ])
         .env("FLOWER_WORKER_TOKEN", "secret")
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+        .stderr(Stdio::inherit())
         .kill_on_drop(true)
         .spawn()
         .unwrap();
